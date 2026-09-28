@@ -1,0 +1,852 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { INITIAL_PROFILES, UserProfile } from '@/data/profiles';
+import { INITIAL_NOTIFICATIONS, AppNotification } from '@/data/notifications';
+import { ProfileCard } from '@/components/ProfileCard';
+import { ProfileModal } from '@/components/ProfileModal';
+import { RegisterModal } from '@/components/RegisterModal';
+import { ChatModal } from '@/components/ChatModal';
+import { RepresentativeDashboard } from '@/components/RepresentativeDashboard';
+import { VerificationModal } from '@/components/VerificationModal';
+import { MehramModal } from '@/components/MehramModal';
+import { ConnectionRequestsModal, ConnectionRequestItem } from '@/components/ConnectionRequestsModal';
+import { NotificationDropdown } from '@/components/NotificationDropdown';
+import { LoginModal } from '@/components/LoginModal';
+import { AdminDashboardModal } from '@/components/AdminDashboardModal';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import {
+  ShieldCheck,
+  Search,
+  Filter,
+  Users,
+  Download,
+  CheckCircle,
+  Headphones,
+  MessageSquare,
+  BadgeCheck,
+  UserCheck,
+  AlertCircle,
+  Bell,
+  LogIn,
+  LogOut,
+  ShieldAlert
+} from 'lucide-react';
+
+export default function Home() {
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null);
+  const [chatPartner, setChatPartner] = useState<UserProfile | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showRepDashboard, setShowRepDashboard] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [showMehramModal, setShowMehramModal] = useState(false);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+  
+  // Notification State
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [browserPushAllowed, setBrowserPushAllowed] = useState(false);
+
+  // Incoming Connection Requests
+  const [connectionRequests, setConnectionRequests] = useState<ConnectionRequestItem[]>([]);
+
+  // Search and filter state
+  const [searchCity, setSearchCity] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState<'all' | 'rishta' | 'friendship'>('all');
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Load from LocalStorage or default
+  useEffect(() => {
+    // Check browser notification permission
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        setBrowserPushAllowed(true);
+      }
+    }
+
+    const savedProfiles = localStorage.getItem('hamsafar_profiles');
+    if (savedProfiles) {
+      try {
+        setProfiles(JSON.parse(savedProfiles));
+      } catch (e) {
+        setProfiles(INITIAL_PROFILES);
+      }
+    } else {
+      setProfiles(INITIAL_PROFILES);
+    }
+
+    const savedNotifs = localStorage.getItem('hamsafar_notifications');
+    if (savedNotifs) {
+      try {
+        setNotifications(JSON.parse(savedNotifs));
+      } catch (e) {
+        setNotifications(INITIAL_NOTIFICATIONS);
+      }
+    } else {
+      setNotifications(INITIAL_NOTIFICATIONS);
+    }
+
+    const savedUser = localStorage.getItem('hamsafar_current_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {}
+    }
+
+    // Default demo connection request to show the user how it works
+    setConnectionRequests([
+      {
+        id: 'req-demo-1',
+        sender: INITIAL_PROFILES[1], // Dr. Fatima Noor
+        recipientId: 'me',
+        status: 'pending',
+        sentAt: '5 mins ago',
+      },
+    ]);
+  }, []);
+
+  const saveNotifications = (updated: AppNotification[]) => {
+    setNotifications(updated);
+    localStorage.setItem('hamsafar_notifications', JSON.stringify(updated));
+  };
+
+  const saveProfilesState = (updated: UserProfile[]) => {
+    setProfiles(updated);
+    localStorage.setItem('hamsafar_profiles', JSON.stringify(updated));
+  };
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Trigger Real System Push Notification if permission granted
+  const firePushNotification = (title: string, body: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/favicon.ico',
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const requestBrowserPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setBrowserPushAllowed(true);
+        triggerToast('🔔 Browser Push Notifications Enabled! Ab aapko screen par alerts aayenge.');
+        firePushNotification('Hamsafar Notifications Active', 'Aapko nayi requests aur safety alerts screen par milenge.');
+      }
+    } else {
+      alert('Aapka browser desktop/mobile push notifications support nahi karta.');
+    }
+  };
+
+  // When current user sends a connection request to someone
+  const handleConnectRequest = (profile: UserProfile) => {
+    triggerToast(`Safe Connection Request sent to ${profile.name}! Jab wo accept karenge toh private chat khulegi.`);
+
+    // Simulate sending notification to that person & echo back a confirmation notif
+    const newNotif: AppNotification = {
+      id: `notif-${Date.now()}`,
+      recipientId: 'me',
+      senderName: profile.name,
+      senderAvatar: profile.avatar,
+      type: 'connection_request',
+      title: 'Connection Request Sent',
+      message: `Aapne ${profile.name} ko request bheji hai. Response aane par foran alert milega.`,
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([newNotif, ...notifications]);
+    firePushNotification('Request Sent!', `${profile.name} ko connection request bhej di gayi hai.`);
+  };
+
+  // Register New User
+  const handleNewUserRegistered = (formData: any) => {
+    const newProfile: UserProfile = {
+      id: `user-${Date.now()}`,
+      name: formData.fullName,
+      age: formData.age,
+      gender: formData.gender,
+      city: formData.city,
+      country: formData.country,
+      profession: formData.profession,
+      education: formData.education,
+      languages: ['Urdu', 'English'],
+      purpose: formData.purpose,
+      avatar: formData.gender === 'female'
+        ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
+      about: 'Hamsafar verified member seeking genuine, respectful and family-aligned connections.',
+      badges: {
+        mobileVerified: true,
+        identityVerified: false,
+        photoVerified: false,
+        familyVerified: false,
+        noActiveRestrictions: true,
+      },
+      isDemo: false,
+    };
+
+    const updated = [newProfile, ...profiles];
+    saveProfilesState(updated);
+    setCurrentUser(newProfile);
+    localStorage.setItem('hamsafar_current_user', JSON.stringify(newProfile));
+    triggerToast(`Mubarak ho ${formData.fullName}! Aapka Hamsafar profile tayyar ho gaya hai.`);
+
+    // Add welcoming notification
+    const welcomeNotif: AppNotification = {
+      id: `notif-welcome-${Date.now()}`,
+      recipientId: 'me',
+      senderName: 'Hamsafar Safety Desk',
+      senderAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+      type: 'rep_message',
+      title: 'Welcome to Hamsafar Platform',
+      message: 'Aapka account verify ho chuka hai. Behtar matches ke liye CNIC aur Mehram mode add karein.',
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([welcomeNotif, ...notifications]);
+  };
+
+  const handleVerificationSubmitted = (badges: any) => {
+    if (currentUser) {
+      const updatedUser = {
+        ...currentUser,
+        badges: {
+          ...currentUser.badges,
+          identityVerified: badges.identityVerified,
+          photoVerified: badges.photoVerified,
+        },
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('hamsafar_current_user', JSON.stringify(updatedUser));
+      
+      const updatedProfiles = profiles.map((p) => p.id === currentUser.id ? updatedUser : p);
+      saveProfilesState(updatedProfiles);
+    }
+
+    const vNotif: AppNotification = {
+      id: `notif-v-${Date.now()}`,
+      recipientId: 'me',
+      senderName: 'Verification Officer',
+      senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+      type: 'safety_alert',
+      title: 'ID Verification Approved',
+      message: 'Aapka CNIC aur Live Selfie tasdeeq ho chuki hai. Blue & Purple badges lag chukay hain.',
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([vNotif, ...notifications]);
+    firePushNotification('Badge Approved!', 'Blue ID aur Purple Selfie badge aapki profile par lag chuka hai.');
+    triggerToast('ID & Selfie Verification submitted! Blue & Purple Badges activate ho gaye hain.');
+  };
+
+  const handleMehramInvited = (data: any) => {
+    if (currentUser) {
+      const updatedUser = {
+        ...currentUser,
+        badges: {
+          ...currentUser.badges,
+          familyVerified: true,
+        },
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('hamsafar_current_user', JSON.stringify(updatedUser));
+      
+      const updatedProfiles = profiles.map((p) => p.id === currentUser.id ? updatedUser : p);
+      saveProfilesState(updatedProfiles);
+    }
+
+    const mNotif: AppNotification = {
+      id: `notif-m-${Date.now()}`,
+      recipientId: 'me',
+      senderName: 'Mehram Guardian Center',
+      senderAvatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&auto=format&fit=crop&q=80',
+      type: 'mehram_activity',
+      title: 'Family Guardian Linked',
+      message: `Aapke ${data.guardianRole} (${data.guardianName}) ko limited access invite bhej diya gaya hai.`,
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([mNotif, ...notifications]);
+    triggerToast(`Mehram / Guardian (${data.guardianRole}) invite link generate ho gaya. Gold Badge activate ho chuka hai!`);
+  };
+
+  const handleAcceptRequest = (req: ConnectionRequestItem) => {
+    setConnectionRequests((prev) =>
+      prev.map((r) => (r.id === req.id ? { ...r, status: 'accepted' } : r))
+    );
+
+    // Notify user that connection is accepted & chat unlocked
+    const acceptNotif: AppNotification = {
+      id: `notif-acc-${Date.now()}`,
+      recipientId: 'me',
+      senderName: req.sender.name,
+      senderAvatar: req.sender.avatar,
+      type: 'connection_accepted',
+      title: 'Connection Accepted! 🤝',
+      message: `Aap aur ${req.sender.name} ab aapas mein safe chat kar sakte hain.`,
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([acceptNotif, ...notifications]);
+    firePushNotification('Connection Accepted!', `${req.sender.name} ke sath aapki chat activate ho gayi hai.`);
+    triggerToast(`${req.sender.name} ki request accept kar li gayi hai. Ab aap safe chat kar sakte hain.`);
+  };
+
+  const handleDeclineRequest = (req: ConnectionRequestItem) => {
+    setConnectionRequests((prev) =>
+      prev.map((r) => (r.id === req.id ? { ...r, status: 'declined' } : r))
+    );
+  };
+
+  // ADMIN ACTIONS
+  const handleAdminApproveVerification = (userId: string) => {
+    const updated = profiles.map((p) => {
+      if (p.id === userId) {
+        return {
+          ...p,
+          badges: {
+            ...p.badges,
+            identityVerified: true,
+            photoVerified: true,
+          },
+        };
+      }
+      return p;
+    });
+    saveProfilesState(updated);
+    triggerToast('User Identity Approved! Blue Verified Badge granted.');
+  };
+
+  const handleAdminRejectVerification = (userId: string) => {
+    triggerToast('Verification rejected. User will receive re-submission request.');
+  };
+
+  const handleAdminBanUser = (userId: string) => {
+    const updated = profiles.map((p) => {
+      if (p.id === userId) {
+        return {
+          ...p,
+          badges: {
+            ...p.badges,
+            noActiveRestrictions: false,
+          },
+        };
+      }
+      return p;
+    });
+    saveProfilesState(updated);
+    triggerToast('User safety restrictions applied.');
+  };
+
+  const handleAdminDeleteUser = (userId: string) => {
+    const updated = profiles.filter((p) => p.id !== userId);
+    saveProfilesState(updated);
+    triggerToast('User permanently removed from platform.');
+  };
+
+  const handleClearDemoData = () => {
+    const onlyRealUsers = profiles.filter((p) => !p.isDemo);
+    saveProfilesState(onlyRealUsers);
+    triggerToast('Demo data saaf kar diya gaya hai! Sirf real registered users show honge.');
+  };
+
+  // Mark notification read
+  const handleMarkAsRead = (id: string) => {
+    const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+    saveNotifications(updated);
+  };
+
+  const handleMarkAllAsRead = () => {
+    const updated = notifications.map((n) => ({ ...n, read: true }));
+    saveNotifications(updated);
+  };
+
+  // Filter profiles
+  const filteredProfiles = profiles.filter((p) => {
+    if (searchCity && !p.city.toLowerCase().includes(searchCity.toLowerCase())) {
+      return false;
+    }
+    if (purposeFilter !== 'all' && !p.purpose.includes(purposeFilter)) {
+      return false;
+    }
+    if (verifiedOnly && !p.badges.identityVerified) {
+      return false;
+    }
+    return true;
+  });
+
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+  const pendingRequestsCount = connectionRequests.filter((r) => r.status === 'pending').length;
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+      
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-2 animate-bounce">
+          <CheckCircle size={18} className="text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Top Navigation */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+              <ShieldCheck size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-extrabold tracking-tight text-slate-900">
+                  Hamsafar
+                </span>
+                <span className="text-sm font-arabic font-bold text-emerald-700">
+                  (ہمسفر)
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-medium hidden sm:block">
+                رابطے جو اعتماد سے بنیں • Trusted Connections
+              </p>
+            </div>
+          </div>
+
+          {/* User Status / Action Buttons */}
+          <div className="flex items-center gap-2 sm:gap-2.5 relative">
+            
+            {/* NOTIFICATION BELL BUTTON */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowNotificationDropdown(!showNotificationDropdown);
+                  setShowRequestsModal(false);
+                }}
+                className={`p-2 rounded-xl border transition-all ${
+                  showNotificationDropdown
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                    : 'text-slate-700 hover:bg-slate-100 border-slate-200'
+                }`}
+                title="Notifications"
+              >
+                <Bell size={18} />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                    {unreadNotificationsCount}
+                  </span>
+                )}
+              </button>
+
+              {/* In-app Notification Dropdown */}
+              <NotificationDropdown
+                isOpen={showNotificationDropdown}
+                onClose={() => setShowNotificationDropdown(false)}
+                notifications={notifications}
+                onMarkAsRead={handleMarkAsRead}
+                onMarkAllAsRead={handleMarkAllAsRead}
+                onRequestClick={() => {
+                  setShowNotificationDropdown(false);
+                  setShowRequestsModal(true);
+                }}
+                onRequestBrowserPermission={requestBrowserPermission}
+                browserPermissionGranted={browserPushAllowed}
+              />
+            </div>
+
+            {/* Connection Requests notification button */}
+            <button
+              onClick={() => {
+                setShowRequestsModal(true);
+                setShowNotificationDropdown(false);
+              }}
+              className="relative p-2 rounded-xl text-slate-700 hover:bg-slate-100 border border-slate-200"
+              title="Connection Requests"
+            >
+              <UserCheck size={18} />
+              {pendingRequestsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {pendingRequestsCount}
+                </span>
+              )}
+            </button>
+
+            {/* Mehram Mode Button */}
+            <button
+              onClick={() => setShowMehramModal(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+            >
+              <Users size={14} className="text-amber-700" />
+              <span>Mehram Mode</span>
+            </button>
+
+            {/* Official ID Verification Button */}
+            <button
+              onClick={() => setShowVerifyModal(true)}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+            >
+              <BadgeCheck size={14} className="text-blue-700" />
+              <span>Verify CNIC</span>
+            </button>
+
+            {/* Representative Console */}
+            <button
+              onClick={() => setShowRepDashboard(true)}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+            >
+              <Headphones size={13} className="text-emerald-600" />
+              <span>Rep</span>
+            </button>
+
+            {/* SUPER ADMIN CONSOLE */}
+            <button
+              onClick={() => setShowAdminDashboard(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-black transition-colors shadow-xs"
+              title="Super Admin Control Panel"
+            >
+              <ShieldAlert size={14} className="text-rose-400" />
+              <span>Admin Portal</span>
+            </button>
+
+            {/* Install / Download App CTA */}
+            <button
+              onClick={() => alert('Download App / PWA: To install on your phone, open your browser menu and tap "Add to Home Screen" or "Install App".')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all shadow-xs"
+            >
+              <Download size={13} className="text-emerald-700" />
+              <span className="hidden lg:inline">Install App</span>
+            </button>
+
+            {/* Join / Profile / Login */}
+            {currentUser ? (
+              <div className="flex items-center gap-2 pl-1 border-l border-slate-200">
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.name}
+                  className="w-8 h-8 rounded-full object-cover border border-emerald-500"
+                />
+                <span className="text-xs font-bold text-slate-800 hidden sm:inline">
+                  {currentUser.name.split(' ')[0]}
+                </span>
+                <button
+                  onClick={() => {
+                    setCurrentUser(null);
+                    localStorage.removeItem('hamsafar_current_user');
+                    triggerToast('Aapka account logout ho gaya hai.');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                  title="Logout"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowLogin(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all border border-slate-200"
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => setShowRegister(true)}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all shadow-md shadow-emerald-600/20"
+                >
+                  Join Free
+                </button>
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="bg-gradient-to-b from-emerald-950 via-slate-900 to-slate-900 text-white py-12 px-4 sm:px-6 relative overflow-hidden">
+        <div className="max-w-4xl mx-auto text-center relative z-10 space-y-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+            <Bell size={14} className="text-emerald-400" />
+            <span>Instant Notification Engine + Push Alerts Active</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
+            رابطے جو اعتماد سے بنیں
+            <span className="block text-2xl sm:text-3xl font-normal text-slate-300 mt-2">
+              Verified Friendship & Serious Rishta Matching
+            </span>
+          </h1>
+
+          <p className="text-xs sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
+            Hamsafar is built on the philosophy: <em>«I am not alone if something goes wrong.»</em> 
+            Jab koi aapko connect request bhejta hai ya accept karta hai, toh instant screen notification aur in-app alert milta hai.
+          </p>
+
+          {/* Quick Action Badges */}
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+            <button
+              onClick={() => setShowNotificationDropdown(true)}
+              className="bg-emerald-900/60 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/40 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <Bell size={14} className="text-emerald-400" />
+              Notifications Center ({unreadNotificationsCount} Unread)
+            </button>
+            <button
+              onClick={requestBrowserPermission}
+              className="bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-600 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <span>🔔 Test Screen Push Alert</span>
+            </button>
+            <button
+              onClick={() => setShowRequestsModal(true)}
+              className="bg-rose-900/60 hover:bg-rose-900 text-rose-200 border border-rose-500/40 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <UserCheck size={14} className="text-rose-400" />
+              Requests ({pendingRequestsCount})
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Discovery & Search Bar */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 z-20 w-full">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-4 sm:p-5 flex flex-col md:flex-row items-center gap-4 justify-between">
+          
+          {/* City Search */}
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-3 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search by city (e.g. Lahore)..."
+              value={searchCity}
+              onChange={(e) => setSearchCity(e.target.value)}
+              className="w-full text-xs sm:text-sm pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 focus:border-emerald-600 outline-none"
+            />
+          </div>
+
+          {/* Purpose Filter */}
+          <div className="flex items-center gap-1.5 w-full md:w-auto bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setPurposeFilter('all')}
+              className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                purposeFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All Matches
+            </button>
+            <button
+              onClick={() => setPurposeFilter('rishta')}
+              className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                purposeFilter === 'rishta'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              💍 Rishta
+            </button>
+            <button
+              onClick={() => setPurposeFilter('friendship')}
+              className={`flex-1 md:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                purposeFilter === 'friendship'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              🤝 Friendship
+            </button>
+          </div>
+
+          {/* Verified Only & Demo Chat */}
+          <div className="flex items-center justify-between w-full md:w-auto gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={verifiedOnly}
+                onChange={(e) => setVerifiedOnly(e.target.checked)}
+                className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-xs font-semibold text-slate-700">
+                Verified Members Only
+              </span>
+            </label>
+
+            {/* Test Chat demo button */}
+            <button
+              onClick={() => setChatPartner(profiles[0] || INITIAL_PROFILES[0])}
+              className="text-xs font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl flex items-center gap-1 transition-colors"
+              title="Open test chat to test live anti-scam AI warnings"
+            >
+              <MessageSquare size={14} />
+              <span>Test Chat Live</span>
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      {/* Main Profiles Grid */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 w-full">
+        
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">
+              Verified Profiles Available ({filteredProfiles.length})
+            </h2>
+            <p className="text-xs text-slate-500">
+              Connect button dabane par samne walay ko instant notification jayega.
+            </p>
+          </div>
+
+          <div className="text-xs text-slate-500 hidden sm:block">
+            Notifications Center Synced
+          </div>
+        </div>
+
+        {filteredProfiles.length === 0 ? (
+          <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 p-8 space-y-3">
+            <AlertCircle size={36} className="mx-auto text-slate-400" />
+            <h3 className="font-bold text-slate-800 text-base">No matches found</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              Try adjusting your city filter or purpose option to see more verified members.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProfiles.map((profile) => (
+              <ProfileCard
+                key={profile.id}
+                profile={profile}
+                onRequestConnect={handleConnectRequest}
+                onViewDetails={(p) => setSelectedProfile(p)}
+              />
+            ))}
+          </div>
+        )}
+
+      </main>
+
+      {/* Footer / Safety Highlights */}
+      <footer className="bg-white border-t border-slate-200 py-10 px-4 sm:px-6 mt-12">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-xs text-slate-600">
+          <div>
+            <div className="flex items-center gap-2 mb-2 font-bold text-slate-900 text-sm">
+              <ShieldCheck className="text-emerald-600" size={18} />
+              Hamsafar Safety Center
+            </div>
+            <p className="leading-relaxed">
+              Never send money, OTPs, or financial details to anyone online. Official Hamsafar representatives never ask for your account password.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-slate-900 mb-2 text-sm">Official Verification Policy</h4>
+            <p className="leading-relaxed">
+              Verification confirms the factual government-issued documents checked by Hamsafar. It does not guarantee a person's future intentions or conduct.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-slate-900 mb-2 text-sm">Offline Meeting Safety</h4>
+            <p className="leading-relaxed">
+              If meeting in person, always choose a public venue in daylight, inform your family or trusted contact, and arrange your own transport.
+            </p>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
+          <span>© 2026 Hamsafar (ہمسفر) Platform. All rights reserved.</span>
+          <span className="font-medium text-slate-500">Strictly 18+ Adults Only Platform</span>
+        </div>
+      </footer>
+
+      {/* Modals Workflow */}
+      <ProfileModal
+        profile={selectedProfile}
+        onClose={() => setSelectedProfile(null)}
+        onConnect={handleConnectRequest}
+      />
+
+      <RegisterModal
+        isOpen={showRegister}
+        onClose={() => setShowRegister(false)}
+        onSuccess={handleNewUserRegistered}
+      />
+
+      <LoginModal
+        isOpen={showLogin}
+        onClose={() => setShowLogin(false)}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          localStorage.setItem('hamsafar_current_user', JSON.stringify(user));
+          triggerToast(`Welcome back, ${user.name}!`);
+        }}
+        onSwitchToRegister={() => {
+          setShowLogin(false);
+          setShowRegister(true);
+        }}
+      />
+
+      <ChatModal
+        partner={chatPartner}
+        onClose={() => setChatPartner(null)}
+      />
+
+      {showRepDashboard && (
+        <RepresentativeDashboard
+          onClose={() => setShowRepDashboard(false)}
+        />
+      )}
+
+      <AdminDashboardModal
+        isOpen={showAdminDashboard}
+        onClose={() => setShowAdminDashboard(false)}
+        profiles={profiles}
+        onApproveVerification={handleAdminApproveVerification}
+        onRejectVerification={handleAdminRejectVerification}
+        onBanUser={handleAdminBanUser}
+        onDeleteUser={handleAdminDeleteUser}
+        onClearDemoData={handleClearDemoData}
+      />
+
+      <VerificationModal
+        isOpen={showVerifyModal}
+        onClose={() => setShowVerifyModal(false)}
+        onVerificationSubmitted={handleVerificationSubmitted}
+      />
+
+      <MehramModal
+        isOpen={showMehramModal}
+        onClose={() => setShowMehramModal(false)}
+        onSuccess={handleMehramInvited}
+      />
+
+      <ConnectionRequestsModal
+        isOpen={showRequestsModal}
+        onClose={() => setShowRequestsModal(false)}
+        requests={connectionRequests}
+        onAccept={handleAcceptRequest}
+        onDecline={handleDeclineRequest}
+        onStartChat={(partner) => setChatPartner(partner)}
+      />
+
+    </div>
+  );
+}
