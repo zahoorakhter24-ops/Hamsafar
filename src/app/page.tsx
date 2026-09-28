@@ -51,6 +51,10 @@ export default function Home() {
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [browserPushAllowed, setBrowserPushAllowed] = useState(false);
 
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
   // Incoming Connection Requests
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequestItem[]>([]);
 
@@ -64,6 +68,14 @@ export default function Home() {
 
   // Load from LocalStorage or default
   useEffect(() => {
+    // PWA Install Prompt Listener
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
     // Check browser notification permission
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
@@ -524,13 +536,25 @@ export default function Home() {
               <span>Admin Portal</span>
             </button>
 
-            {/* Install / Download App CTA */}
+            {/* Install / Download App CTA with Native Mobile Install Prompt */}
             <button
-              onClick={() => alert('Download App / PWA: To install on your phone, open your browser menu and tap "Add to Home Screen" or "Install App".')}
+              onClick={async () => {
+                if (deferredPrompt) {
+                  deferredPrompt.prompt();
+                  const { outcome } = await deferredPrompt.userChoice;
+                  if (outcome === 'accepted') {
+                    setDeferredPrompt(null);
+                    triggerToast('Mubarak ho! Hamsafar App aapke phone par install ho rahi hai.');
+                  }
+                } else {
+                  triggerToast('App install karne ke liye Chrome menu (3 dots) par "Install app" tap karein.');
+                }
+              }}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all shadow-xs"
             >
               <Download size={13} className="text-emerald-700" />
               <span className="hidden lg:inline">Install App</span>
+              <span className="lg:hidden text-[11px]">Install</span>
             </button>
 
             {/* Join / Profile / Login */}
