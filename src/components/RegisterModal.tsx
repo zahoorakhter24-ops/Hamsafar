@@ -13,7 +13,10 @@ import {
   GraduationCap,
   Users,
   Home,
-  BookOpen
+  BookOpen,
+  Smartphone,
+  CheckCircle2,
+  Send
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -82,6 +85,51 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
   const [error, setError] = useState('');
 
+  // Mobile OTP Verification States
+  const [otpSent, setOtpSent] = useState(false);
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [smsAlert, setSmsAlert] = useState<{ show: boolean; code: string } | null>(null);
+
+  // OTP Countdown timer
+  React.useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (otpCountdown > 0) {
+      timer = setTimeout(() => setOtpCountdown(otpCountdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpCountdown]);
+
+  const handleSendOtp = () => {
+    if (!formData.mobileNumber.trim() || formData.mobileNumber.length < 11) {
+      setError('Pehle 11-digit durust Pakistani mobile number darj karein (e.g. 03001234567).');
+      return;
+    }
+    setError('');
+    // Generate realistic 4-digit OTP
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    setGeneratedOtp(code);
+    setOtpSent(true);
+    setOtpCountdown(60);
+    setSmsAlert({ show: true, code });
+  };
+
+  const handleVerifyOtp = () => {
+    if (!enteredOtp.trim()) {
+      setError('Bara-e-meherbani 4-digit OTP code enter karein.');
+      return;
+    }
+    if (enteredOtp.trim() === generatedOtp) {
+      setIsPhoneVerified(true);
+      setError('');
+      setSmsAlert(null);
+    } else {
+      setError('Ghalat OTP code! Bara-e-meherbani SMS notification mein diya gaya 4-digit code check karein.');
+    }
+  };
+
   if (!isOpen) return null;
 
   const calculateAge = (dobString: string) => {
@@ -134,6 +182,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       }
       if (!formData.mobileNumber.trim() || formData.mobileNumber.length < 11) {
         setError('Durust 11-digit Pakistani mobile number darj karein (e.g. 03001234567).');
+        return;
+      }
+      if (!isPhoneVerified) {
+        setError('Mobile verification lazmi hai! "Send OTP" daba kar apna mobile number verify karein.');
         return;
       }
       setStep(2);
@@ -273,33 +325,106 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mazhab & Practice (Religion) *</label>
-                  <select
-                    value={formData.religion}
-                    onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 bg-white"
-                  >
-                    <option value="Islam (Practicing Muslim)">Islam (Practicing Muslim)</option>
-                    <option value="Islam (Moderate)">Islam (Moderate)</option>
-                    <option value="Christianity">Christianity</option>
-                    <option value="Hinduism">Hinduism</option>
-                    <option value="Other">Other</option>
-                  </select>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mazhab & Practice (Religion) *</label>
+                <select
+                  value={formData.religion}
+                  onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
+                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 bg-white"
+                >
+                  <option value="Islam (Practicing Muslim)">Islam (Practicing Muslim)</option>
+                  <option value="Islam (Moderate)">Islam (Moderate)</option>
+                  <option value="Christianity">Christianity</option>
+                  <option value="Hinduism">Hinduism</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Mobile Number & Interactive OTP Verification */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Pakistani Mobile Number (SMS OTP Verification) *
+                  </label>
+                  {isPhoneVerified ? (
+                    <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 size={14} /> Verified
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                      OTP Lazmi Hai
+                    </span>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Mobile Number (For Verification) *</label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="0300 1234567"
-                    value={formData.mobileNumber}
-                    onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
-                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-mono"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="tel"
+                      required
+                      disabled={isPhoneVerified}
+                      placeholder="0300 1234567"
+                      value={formData.mobileNumber}
+                      onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
+                      className={`w-full text-xs p-2.5 rounded-xl border font-mono ${
+                        isPhoneVerified
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold'
+                          : 'bg-white border-slate-300 text-slate-900 focus:border-emerald-600'
+                      }`}
+                    />
+                  </div>
+
+                  {!isPhoneVerified && (
+                    <button
+                      type="button"
+                      disabled={otpCountdown > 0}
+                      onClick={handleSendOtp}
+                      className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shrink-0 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Smartphone size={14} />
+                      {otpSent ? (otpCountdown > 0 ? `Resend (${otpCountdown}s)` : 'Resend Code') : 'Send OTP'}
+                    </button>
+                  )}
                 </div>
+
+                {/* Simulated Real-Feel Incoming SMS Banner */}
+                {smsAlert?.show && !isPhoneVerified && (
+                  <div className="p-3 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white rounded-xl shadow-md border border-emerald-500/40 animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center justify-between text-[11px] text-emerald-400 font-bold mb-1">
+                      <span className="flex items-center gap-1.5">
+                        <Smartphone size={13} className="text-emerald-400 animate-pulse" />
+                        🔔 SMS Received from &quot;HAMSAFAR&quot;
+                      </span>
+                      <span className="text-[10px] text-slate-300">Just now</span>
+                    </div>
+                    <p className="text-xs text-slate-100">
+                      Aapka verification OTP code: <span className="font-mono font-black text-amber-300 tracking-widest text-sm bg-white/10 px-2 py-0.5 rounded-md ml-1">{smsAlert.code}</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-1">Neechay box mein yeh code daakhil karein.</p>
+                  </div>
+                )}
+
+                {/* OTP Input and Verification Button */}
+                {otpSent && !isPhoneVerified && (
+                  <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="4-digit code"
+                      value={enteredOtp}
+                      onChange={(e) => setEnteredOtp(e.target.value)}
+                      className="w-32 text-center font-mono font-black tracking-widest text-sm p-2 rounded-xl border border-slate-300 bg-white outline-none focus:border-emerald-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle2 size={15} />
+                      Verify OTP
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
