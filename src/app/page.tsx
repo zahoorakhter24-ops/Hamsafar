@@ -33,6 +33,14 @@ import {
   ShieldAlert
 } from 'lucide-react';
 
+import {
+  fetchCloudProfiles,
+  insertCloudProfile,
+  updateCloudProfile,
+  deleteCloudProfile,
+  clearCloudDemoProfiles
+} from '@/lib/cloudProfiles';
+
 export default function Home() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -66,9 +74,14 @@ export default function Home() {
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Load from LocalStorage or default
+  // Load Cloud Profiles & Sync
   useEffect(() => {
-    // PWA Install Prompt Listener
+    // 1. Register Service Worker for Mobile PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => console.log('SW registration skipped', err));
+    }
+
+    // 2. PWA Install Prompt Listener
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -76,23 +89,28 @@ export default function Home() {
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-    // Check browser notification permission
+    // 3. Check browser notification permission
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
         setBrowserPushAllowed(true);
       }
     }
 
-    const savedProfiles = localStorage.getItem('hamsafar_profiles');
-    if (savedProfiles) {
-      try {
-        setProfiles(JSON.parse(savedProfiles));
-      } catch (e) {
-        setProfiles(INITIAL_PROFILES);
+    // 4. Fetch Global Cloud Profiles (Multi-device sync)
+    const loadProfiles = async () => {
+      const cloudData = await fetchCloudProfiles();
+      setProfiles(cloudData);
+      localStorage.setItem('hamsafar_profiles', JSON.stringify(cloudData));
+    };
+    loadProfiles();
+
+    // Polling interval every 5 seconds for live multi-device sync
+    const syncInterval = setInterval(async () => {
+      const liveData = await fetchCloudProfiles();
+      if (liveData && liveData.length > 0) {
+        setProfiles(liveData);
       }
-    } else {
-      setProfiles(INITIAL_PROFILES);
-    }
+    }, 5000);
 
     const savedNotifs = localStorage.getItem('hamsafar_notifications');
     if (savedNotifs) {
@@ -122,6 +140,11 @@ export default function Home() {
         sentAt: '5 mins ago',
       },
     ]);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      clearInterval(syncInterval);
+    };
   }, []);
 
   const saveNotifications = (updated: AppNotification[]) => {
@@ -187,7 +210,7 @@ export default function Home() {
   };
 
   // Register New User
-  const handleNewUserRegistered = (formData: any) => {
+  const handleNewUserRegistered = async (formData: any) => {
     const newProfile: UserProfile = {
       id: `user-${Date.now()}`,
       name: formData.fullName,
@@ -203,6 +226,7 @@ export default function Home() {
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
       about: 'Hamsafar verified member seeking genuine, respectful and family-aligned connections.',
+      verificationStatus: 'unsubmitted',
       badges: {
         mobileVerified: true,
         identityVerified: false,
@@ -213,10 +237,15 @@ export default function Home() {
       isDemo: false,
     };
 
+    // Save locally and in Supabase Cloud
     const updated = [newProfile, ...profiles];
     saveProfilesState(updated);
     setCurrentUser(newProfile);
     localStorage.setItem('hamsafar_current_user', JSON.stringify(newProfile));
+    
+    // Sync to Supabase Cloud
+    await insertCloudProfile(newProfile);
+
     triggerToast(`Mubarak ho ${formData.fullName}! Aapka Hamsafar profile tayyar ho gaya hai.`);
 
     // Add welcoming notification
@@ -286,10 +315,13 @@ export default function Home() {
       saveNotifications([adminNotif, userNotif, ...notifications]);
       firePushNotification('Documents Under Review', 'Aapka CNIC & Live Selfie Admin review queue mein bhej diya gaya hai.');
       triggerToast('Documents submit ho chuke hain! Admin ke approve karne tak status Pending rahega.');
+
+      // Sync verification submission to cloud
+      await updateCloudProfile(currentUser.id, updatedUser);
     }
   };
 
-  const handleMehramInvited = (data: any) => {
+  const handleMehramInvited = async (data: any) => {
     if (currentUser) {
       const updatedUser = {
         ...currentUser,
@@ -303,6 +335,7 @@ export default function Home() {
       
       const updatedProfiles = profiles.map((p) => p.id === currentUser.id ? updatedUser : p);
       saveProfilesState(updatedProfiles);
+      await updateCloudProfile(currentUser.id, updatedUser);
     }
 
     const mNotif: AppNotification = {
@@ -348,8 +381,8 @@ export default function Home() {
     );
   };
 
-  // ADMIN ACTIONS
-  const handleAdminApproveVerification = (userId: string) => {
+  // ADMIN ACTIONS (Syncs with Cloud Database)
+  const handleAdminApproveVerification = async (userId: string) => {
     let approvedUserName = '';
     const updated = profiles.map((p) => {
       if (p.id === userId) {
@@ -367,6 +400,17 @@ export default function Home() {
       return p;
     });
     saveProfilesState(updated);
+
+    await updateCloudProfile(userId, {
+      verificationStatus: 'verified',
+      badges: {
+        mobileVerified: true,
+        identityVerified: true,
+        photoVerified: true,
+        familyVerified: false,
+        noActiveRestrictions: true,
+      },
+    });
 
     if (currentUser && currentUser.id === userId) {
       const updatedUser = {
@@ -399,7 +443,7 @@ export default function Home() {
     triggerToast(`${approvedUserName} ki verification approve ho gayi! Blue Badge lag gaya.`);
   };
 
-  const handleAdminRejectVerification = (userId: string) => {
+  const handleAdminRejectVerification = async (userId: string) => {
     let rejectedUserName = '';
     const updated = profiles.map((p) => {
       if (p.id === userId) {
@@ -412,6 +456,10 @@ export default function Home() {
       return p;
     });
     saveProfilesState(updated);
+
+    await updateCloudProfile(userId, {
+      verificationStatus: 'rejected',
+    });
 
     if (currentUser && currentUser.id === userId) {
       const updatedUser = {
@@ -438,7 +486,7 @@ export default function Home() {
     triggerToast(`${rejectedUserName} ki verification reject kar di gayi hai.`);
   };
 
-  const handleAdminBanUser = (userId: string) => {
+  const handleAdminBanUser = async (userId: string) => {
     const updated = profiles.map((p) => {
       if (p.id === userId) {
         return {
@@ -452,19 +500,30 @@ export default function Home() {
       return p;
     });
     saveProfilesState(updated);
+    await updateCloudProfile(userId, {
+      badges: {
+        mobileVerified: true,
+        identityVerified: false,
+        photoVerified: false,
+        familyVerified: false,
+        noActiveRestrictions: false,
+      },
+    });
     triggerToast('User safety restrictions applied.');
   };
 
-  const handleAdminDeleteUser = (userId: string) => {
+  const handleAdminDeleteUser = async (userId: string) => {
     const updated = profiles.filter((p) => p.id !== userId);
     saveProfilesState(updated);
+    await deleteCloudProfile(userId);
     triggerToast('User permanently removed from platform.');
   };
 
-  const handleClearDemoData = () => {
+  const handleClearDemoData = async () => {
     const onlyRealUsers = profiles.filter((p) => !p.isDemo);
     saveProfilesState(onlyRealUsers);
-    triggerToast('Demo data saaf kar diya gaya hai! Sirf real registered users show honge.');
+    await clearCloudDemoProfiles();
+    triggerToast('Demo data saaf kar diya gaya hai! Tamam devices par live sync ho gaya.');
   };
 
   // Mark notification read
@@ -478,8 +537,12 @@ export default function Home() {
     saveNotifications(updated);
   };
 
-  // Filter profiles
+  // Filter profiles (Exclude current logged-in user so you never see yourself)
   const filteredProfiles = profiles.filter((p) => {
+    // 1. Never show your own profile in matching/discovery
+    if (currentUser && (p.id === currentUser.id || p.name === currentUser.name)) {
+      return false;
+    }
     if (searchCity && !p.city.toLowerCase().includes(searchCity.toLowerCase())) {
       return false;
     }
@@ -613,16 +676,6 @@ export default function Home() {
             >
               <Headphones size={13} className="text-emerald-600" />
               <span>Rep</span>
-            </button>
-
-            {/* SUPER ADMIN CONSOLE */}
-            <button
-              onClick={() => setShowAdminDashboard(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-black transition-colors shadow-xs"
-              title="Super Admin Control Panel"
-            >
-              <ShieldAlert size={14} className="text-rose-400" />
-              <span>Admin Portal</span>
             </button>
 
             {/* Install / Download App CTA with Native Mobile Install Prompt */}
@@ -885,7 +938,16 @@ export default function Home() {
         </div>
 
         <div className="max-w-7xl mx-auto mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
-          <span>© 2026 Hamsafar (ہمسفر) Platform. All rights reserved.</span>
+          <div className="flex items-center gap-3">
+            <span>© 2026 Hamsafar (ہمسفر) Platform. All rights reserved.</span>
+            <button
+              onClick={() => setShowAdminDashboard(true)}
+              className="text-slate-400 hover:text-slate-600 underline text-[11px] flex items-center gap-1 font-mono transition-colors"
+            >
+              <ShieldAlert size={12} />
+              <span>Admin Access</span>
+            </button>
+          </div>
           <span className="font-medium text-slate-500">Strictly 18+ Adults Only Platform</span>
         </div>
       </footer>

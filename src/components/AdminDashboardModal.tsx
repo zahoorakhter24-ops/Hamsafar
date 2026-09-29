@@ -42,8 +42,77 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [activeTab, setActiveTab] = useState<'verifications' | 'users' | 'reports'>('verifications');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDocUser, setSelectedDocUser] = useState<UserProfile | null>(null);
+  
+  // Admin Security Password Gate
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminPin, setAdminPin] = useState('');
+  const [authError, setAuthError] = useState('');
 
   if (!isOpen) return null;
+
+  const handleAdminAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Default Master Admin Password
+    if (adminPin === 'admin123' || adminPin === 'Hamsafar@2026') {
+      setIsAuthenticated(true);
+      setAuthError('');
+    } else {
+      setAuthError('Ghalat Password! Sirf authorized admin hi access kar sakta hai.');
+    }
+  };
+
+  // If not authenticated, show secure login gate
+  if (!isAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs">
+        <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 border border-slate-200 text-center space-y-4">
+          <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock size={28} />
+          </div>
+          <div>
+            <h3 className="font-bold text-lg text-slate-900">Admin Portal Locked</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Admin access ke liye security password darj karein.
+            </p>
+          </div>
+
+          <form onSubmit={handleAdminAuth} className="space-y-3">
+            {authError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl">
+                {authError}
+              </div>
+            )}
+            <input
+              type="password"
+              placeholder="Admin Password..."
+              value={adminPin}
+              onChange={(e) => setAdminPin(e.target.value)}
+              className="w-full text-center text-sm px-4 py-2.5 rounded-xl border border-slate-300 focus:border-rose-600 outline-none font-mono"
+              autoFocus
+            />
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-1/2 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="w-1/2 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+              >
+                Unlock Access
+              </button>
+            </div>
+            <div className="text-[10px] text-slate-400 pt-1">
+              Hint: Default password is <strong>admin123</strong>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // Filter profiles that have pending verification
   const pendingVerifications = profiles.filter(
