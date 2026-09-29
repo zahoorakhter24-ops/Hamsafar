@@ -11,7 +11,14 @@ export interface UserProfile {
   purpose: ('rishta' | 'friendship')[];
   avatar: string;
   about: string;
-  // Verification Badges
+  // Verification Badges & Status
+  verificationStatus?: 'unsubmitted' | 'pending' | 'verified' | 'rejected';
+  submittedDocuments?: {
+    cnicNumber: string;
+    cnicFrontName?: string;
+    selfieName?: string;
+    submittedAt: string;
+  };
   badges: {
     mobileVerified: boolean;
     identityVerified: boolean;

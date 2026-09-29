@@ -66,7 +66,12 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
 
         {/* Verification Badges Row */}
         <div className="mt-3.5 pt-3 border-t border-slate-100">
-          <VerificationBadges badges={profile.badges} size="sm" showLabels={true} />
+          <VerificationBadges
+            badges={profile.badges}
+            verificationStatus={profile.verificationStatus}
+            size="sm"
+            showLabels={true}
+          />
         </div>
 
         {/* Purpose Tags */}

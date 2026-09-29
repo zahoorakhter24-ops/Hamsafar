@@ -78,7 +78,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </p>
 
               <div className="pt-2">
-                <VerificationBadges badges={profile.badges} size="sm" showLabels={true} />
+                <VerificationBadges
+                  badges={profile.badges}
+                  verificationStatus={profile.verificationStatus}
+                  size="sm"
+                  showLabels={true}
+                />
               </div>
             </div>
           </div>

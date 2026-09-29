@@ -34,13 +34,14 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
       setIsSubmitting(false);
       setSubmitted(true);
       onVerificationSubmitted({
-        identityVerified: true,
-        photoVerified: true,
+        cnicNumber,
+        cnicFrontName: cnicFront ? cnicFront.name : 'CNIC_Front_Image.jpg',
+        selfieName: selfie ? selfie.name : 'Selfie_Verification.jpg',
       });
       setTimeout(() => {
         setSubmitted(false);
         onClose();
-      }, 2000);
+      }, 2500);
     }, 1500);
   };
 
@@ -63,12 +64,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 
         {submitted ? (
           <div className="p-8 text-center space-y-3">
-            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+            <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
               <CheckCircle2 size={32} />
             </div>
-            <h4 className="text-lg font-bold text-slate-900">Documents Submitted Successfully!</h4>
+            <h4 className="text-lg font-bold text-slate-900">Documents Submitted (Under Review)</h4>
             <p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-              Aapka Blue Identity Badge aur Purple Photo Badge activate kar diya gaya hai. Verification Officer document details ko audit log mein verify karega.
+              Aapke CNIC aur Live Selfie documents verification queue mein submit ho chuke hain. Verification Officer review karne ke baad Blue Identity Badge activate karega.
             </p>
           </div>
         ) : (

@@ -45,8 +45,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Filter profiles that have pending verification (or not yet identity verified)
-  const pendingVerifications = profiles.filter((p) => !p.badges.identityVerified);
+  // Filter profiles that have pending verification
+  const pendingVerifications = profiles.filter(
+    (p) => p.verificationStatus === 'pending' || (!p.badges.identityVerified && p.submittedDocuments) || (!p.badges.identityVerified && !p.isDemo)
+  );
   const verifiedCount = profiles.filter((p) => p.badges.identityVerified).length;
 
   const filteredUsers = profiles.filter((p) =>

@@ -234,14 +234,21 @@ export default function Home() {
     saveNotifications([welcomeNotif, ...notifications]);
   };
 
-  const handleVerificationSubmitted = (badges: any) => {
+  const handleVerificationSubmitted = (docData: any) => {
     if (currentUser) {
-      const updatedUser = {
+      const updatedUser: UserProfile = {
         ...currentUser,
+        verificationStatus: 'pending',
+        submittedDocuments: {
+          cnicNumber: docData.cnicNumber,
+          cnicFrontName: docData.cnicFrontName,
+          selfieName: docData.selfieName,
+          submittedAt: 'Just now',
+        },
         badges: {
           ...currentUser.badges,
-          identityVerified: badges.identityVerified,
-          photoVerified: badges.photoVerified,
+          identityVerified: false,
+          photoVerified: false,
         },
       };
       setCurrentUser(updatedUser);
@@ -249,22 +256,37 @@ export default function Home() {
       
       const updatedProfiles = profiles.map((p) => p.id === currentUser.id ? updatedUser : p);
       saveProfilesState(updatedProfiles);
-    }
 
-    const vNotif: AppNotification = {
-      id: `notif-v-${Date.now()}`,
-      recipientId: 'me',
-      senderName: 'Verification Officer',
-      senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-      type: 'safety_alert',
-      title: 'ID Verification Approved',
-      message: 'Aapka CNIC aur Live Selfie tasdeeq ho chuki hai. Blue & Purple badges lag chukay hain.',
-      timestamp: 'Just now',
-      read: false,
-    };
-    saveNotifications([vNotif, ...notifications]);
-    firePushNotification('Badge Approved!', 'Blue ID aur Purple Selfie badge aapki profile par lag chuka hai.');
-    triggerToast('ID & Selfie Verification submitted! Blue & Purple Badges activate ho gaye hain.');
+      // Notification for User: Pending Review
+      const userNotif: AppNotification = {
+        id: `notif-user-pending-${Date.now()}`,
+        recipientId: 'me',
+        senderName: 'Verification Desk',
+        senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+        type: 'safety_alert',
+        title: 'Documents Submitted (Under Review)',
+        message: 'Aapka CNIC & Live Selfie submit ho chuka hai. Admin review ke baad Blue ID Badge activate karega.',
+        timestamp: 'Just now',
+        read: false,
+      };
+
+      // Notification for Admin: New Pending Verification
+      const adminNotif: AppNotification = {
+        id: `notif-admin-${Date.now()}`,
+        recipientId: 'admin',
+        senderName: currentUser.name,
+        senderAvatar: currentUser.avatar,
+        type: 'safety_alert',
+        title: '⚠️ New Verification Pending Review',
+        message: `${currentUser.name} (${currentUser.city}) ne CNIC: ${docData.cnicNumber} submit kiya hai. Admin Portal mein review karein.`,
+        timestamp: 'Just now',
+        read: false,
+      };
+
+      saveNotifications([adminNotif, userNotif, ...notifications]);
+      firePushNotification('Documents Under Review', 'Aapka CNIC & Live Selfie Admin review queue mein bhej diya gaya hai.');
+      triggerToast('Documents submit ho chuke hain! Admin ke approve karne tak status Pending rahega.');
+    }
   };
 
   const handleMehramInvited = (data: any) => {
@@ -328,10 +350,13 @@ export default function Home() {
 
   // ADMIN ACTIONS
   const handleAdminApproveVerification = (userId: string) => {
+    let approvedUserName = '';
     const updated = profiles.map((p) => {
       if (p.id === userId) {
+        approvedUserName = p.name;
         return {
           ...p,
+          verificationStatus: 'verified' as const,
           badges: {
             ...p.badges,
             identityVerified: true,
@@ -342,11 +367,75 @@ export default function Home() {
       return p;
     });
     saveProfilesState(updated);
-    triggerToast('User Identity Approved! Blue Verified Badge granted.');
+
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = {
+        ...currentUser,
+        verificationStatus: 'verified' as const,
+        badges: {
+          ...currentUser.badges,
+          identityVerified: true,
+          photoVerified: true,
+        },
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('hamsafar_current_user', JSON.stringify(updatedUser));
+    }
+
+    // Send Approval notification to user
+    const approveNotif: AppNotification = {
+      id: `notif-appr-${Date.now()}`,
+      recipientId: userId,
+      senderName: 'Verification Officer (Approved)',
+      senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+      type: 'safety_alert',
+      title: 'Official ID Verified! 🔵',
+      message: `Mubarak ho! Admin ne aapka CNIC aur live selfie verify kar liya hai. Blue Identity & Purple Photo badges activate ho chukay hain.`,
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([approveNotif, ...notifications]);
+    firePushNotification('Identity Verified!', `${approvedUserName} ka account approve ho chuka hai.`);
+    triggerToast(`${approvedUserName} ki verification approve ho gayi! Blue Badge lag gaya.`);
   };
 
   const handleAdminRejectVerification = (userId: string) => {
-    triggerToast('Verification rejected. User will receive re-submission request.');
+    let rejectedUserName = '';
+    const updated = profiles.map((p) => {
+      if (p.id === userId) {
+        rejectedUserName = p.name;
+        return {
+          ...p,
+          verificationStatus: 'rejected' as const,
+        };
+      }
+      return p;
+    });
+    saveProfilesState(updated);
+
+    if (currentUser && currentUser.id === userId) {
+      const updatedUser = {
+        ...currentUser,
+        verificationStatus: 'rejected' as const,
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('hamsafar_current_user', JSON.stringify(updatedUser));
+    }
+
+    // Send Rejection notification to user
+    const rejectNotif: AppNotification = {
+      id: `notif-rej-${Date.now()}`,
+      recipientId: userId,
+      senderName: 'Verification Officer',
+      senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+      type: 'safety_alert',
+      title: 'Verification Resubmission Needed',
+      message: 'Aapke CNIC ya selfie ki tasweer wazeh nahi thi. Bara-e-meherbani wazeh tasweer dobara upload karein.',
+      timestamp: 'Just now',
+      read: false,
+    };
+    saveNotifications([rejectNotif, ...notifications]);
+    triggerToast(`${rejectedUserName} ki verification reject kar di gayi hai.`);
   };
 
   const handleAdminBanUser = (userId: string) => {

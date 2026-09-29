@@ -9,12 +9,14 @@ interface VerificationBadgesProps {
     familyVerified: boolean;
     noActiveRestrictions: boolean;
   };
+  verificationStatus?: 'unsubmitted' | 'pending' | 'verified' | 'rejected';
   size?: 'sm' | 'md';
   showLabels?: boolean;
 }
 
 export const VerificationBadges: React.FC<VerificationBadgesProps> = ({
   badges,
+  verificationStatus,
   size = 'md',
   showLabels = false,
 }) => {
@@ -23,6 +25,25 @@ export const VerificationBadges: React.FC<VerificationBadgesProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {verificationStatus === 'pending' && (
+        <span
+          title="Documents Under Admin Review"
+          className={`inline-flex items-center gap-1 font-semibold bg-amber-50 text-amber-800 border border-amber-300 rounded-full animate-pulse ${paddingClass}`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+          <span>Pending Review</span>
+        </span>
+      )}
+
+      {verificationStatus === 'rejected' && (
+        <span
+          title="Verification Needs Resubmission"
+          className={`inline-flex items-center gap-1 font-medium bg-rose-50 text-rose-700 border border-rose-200 rounded-full ${paddingClass}`}
+        >
+          <span>Needs Resubmission</span>
+        </span>
+      )}
+
       {badges.mobileVerified && (
         <span
           title="Mobile Verified"
