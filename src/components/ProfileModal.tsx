@@ -127,12 +127,59 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                   <span className="font-semibold text-slate-800">{profile.religiousCommitment || 'Practicing'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Preferred Cities:</span>
-                  <span className="font-semibold text-slate-800">{profile.preferredCity || 'Flexible'}</span>
+                  <span className="text-slate-500 block">Living Preference:</span>
+                  <span className="font-semibold text-slate-800">{profile.livingArrangementPreference || 'Flexible'}</span>
                 </div>
               </div>
             </div>
           )}
+
+          {/* AD. Matching Explanation (Why You May Match & Things to Discuss) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <span>🎯 Transparent Matching Analysis (No Fake Scores)</span>
+            </h4>
+
+            <div className="space-y-2 text-xs">
+              <div>
+                <span className="font-bold text-emerald-800 block mb-1">✅ Why You May Match:</span>
+                <ul className="space-y-1 text-slate-700 pl-1">
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-bold">•</span>
+                    <span>City compatibility ({profile.city})</span>
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-bold">•</span>
+                    <span>Both looking for genuine {profile.purpose.join(' & ')} connections</span>
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-emerald-600 font-bold">•</span>
+                    <span>Verified safety standing with official badges</span>
+                  </li>
+                  {profile.requirements?.idealPartnerSummary && (
+                    <li className="flex items-center gap-1.5">
+                      <span className="text-emerald-600 font-bold">•</span>
+                      <span>Mutual shared life and education values</span>
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60">
+                <span className="font-bold text-amber-800 block mb-1">⚠️ Things To Discuss Together:</span>
+                <ul className="space-y-1 text-slate-600 pl-1">
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-amber-600 font-bold">•</span>
+                    <span>Living arrangement preference ({profile.livingArrangementPreference || 'Flexible'})</span>
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <span className="text-amber-600 font-bold">•</span>
+                    <span>Relocation willingness ({profile.relocationWillingness || 'Flexible'})</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
 
           {/* Friendship / Interests */}
           {profile.interests && profile.interests.length > 0 && (

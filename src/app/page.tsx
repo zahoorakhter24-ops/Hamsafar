@@ -14,6 +14,7 @@ import { ConnectionRequestsModal, ConnectionRequestItem } from '@/components/Con
 import { NotificationDropdown } from '@/components/NotificationDropdown';
 import { LoginModal } from '@/components/LoginModal';
 import { AdminDashboardModal } from '@/components/AdminDashboardModal';
+import { DetailedProfileModal } from '@/components/DetailedProfileModal';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   ShieldCheck,
@@ -30,7 +31,8 @@ import {
   Bell,
   LogIn,
   LogOut,
-  ShieldAlert
+  ShieldAlert,
+  UserPen
 } from 'lucide-react';
 
 import {
@@ -50,6 +52,7 @@ export default function Home() {
   const [showLogin, setShowLogin] = useState(false);
   const [showRepDashboard, setShowRepDashboard] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showDetailedProfile, setShowDetailedProfile] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showMehramModal, setShowMehramModal] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
@@ -702,14 +705,21 @@ export default function Home() {
             {/* Join / Profile / Login */}
             {currentUser ? (
               <div className="flex items-center gap-2 pl-1 border-l border-slate-200">
-                <img
-                  src={currentUser.avatar}
-                  alt={currentUser.name}
-                  className="w-8 h-8 rounded-full object-cover border border-emerald-500"
-                />
-                <span className="text-xs font-bold text-slate-800 hidden sm:inline">
-                  {currentUser.name.split(' ')[0]}
-                </span>
+                <button
+                  onClick={() => setShowDetailedProfile(true)}
+                  className="flex items-center gap-1.5 p-1 pr-2.5 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Edit My Profile & Partner Requirements"
+                >
+                  <img
+                    src={currentUser.avatar}
+                    alt={currentUser.name}
+                    className="w-8 h-8 rounded-full object-cover border border-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-slate-800 hidden sm:inline">
+                    {currentUser.name.split(' ')[0]}
+                  </span>
+                  <UserPen size={13} className="text-emerald-700 hidden sm:inline" />
+                </button>
                 <button
                   onClick={() => {
                     setCurrentUser(null);
@@ -978,6 +988,22 @@ export default function Home() {
           setShowRegister(true);
         }}
       />
+
+      {currentUser && (
+        <DetailedProfileModal
+          isOpen={showDetailedProfile}
+          onClose={() => setShowDetailedProfile(false)}
+          currentUser={currentUser}
+          onSaveProfile={async (updated) => {
+            setCurrentUser(updated);
+            localStorage.setItem('hamsafar_current_user', JSON.stringify(updated));
+            const updatedList = profiles.map(p => p.id === updated.id ? updated : p);
+            saveProfilesState(updatedList);
+            await updateCloudProfile(updated.id, updated);
+            triggerToast('Profile & Partner Requirements kamyabi se save ho gayi hain!');
+          }}
+        />
+      )}
 
       <ChatModal
         partner={chatPartner}
