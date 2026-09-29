@@ -214,21 +214,74 @@ export default function Home() {
 
   // Register New User
   const handleNewUserRegistered = async (formData: any) => {
+    const partnerCities = formData.partnerCity
+      ? formData.partnerCity.split(',').map((c: string) => c.trim()).filter(Boolean)
+      : ['Lahore', 'Islamabad'];
+
+    const dealBreakersList = formData.dealBreakers
+      ? formData.dealBreakers.split(',').map((d: string) => d.trim()).filter(Boolean)
+      : ['Smoking', 'Dishonesty', 'Bad temper'];
+
     const newProfile: UserProfile = {
       id: `user-${Date.now()}`,
       name: formData.fullName,
-      age: formData.age,
+      age: Number(formData.age) || 25,
       gender: formData.gender,
-      city: formData.city,
-      country: formData.country,
-      profession: formData.profession,
-      education: formData.education,
-      languages: ['Urdu', 'English'],
-      purpose: formData.purpose,
+      dob: formData.dob || undefined,
+      city: formData.currentCity || formData.city || 'Lahore',
+      country: formData.country || 'Pakistan',
+      nativeCity: formData.nativeCity || undefined,
+      profession: formData.profession || 'Professional',
+      education: formData.educationLevel || formData.education || 'Graduate',
+      degreeField: formData.degreeField || undefined,
+      institution: formData.institution || undefined,
+      jobType: formData.jobType || 'Job',
+      incomeRange: formData.incomeRange || '100k - 250k PKR',
+      languages: formData.languages || ['Urdu', 'English'],
+      purpose: formData.purpose || ['rishta'],
+      seriousnessLevel: formData.seriousnessLevel || 'Marriage کے لیے serious',
       avatar: formData.gender === 'female'
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
         : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
-      about: 'Hamsafar verified member seeking genuine, respectful and family-aligned connections.',
+      about: formData.aboutMe || 'Hamsafar verified member seeking genuine, respectful and family-aligned connections.',
+      maritalStatus: formData.maritalStatus || 'Never Married',
+      hasChildren: Boolean(formData.hasChildren),
+      childrenCount: Number(formData.childrenCount) || 0,
+      familyType: formData.familyType || 'Nuclear Family',
+      parentsStatus: `Father: ${formData.fatherStatus || 'Alive'}, Mother: ${formData.motherStatus || 'Alive'}`,
+      brothersCount: Number(formData.brothersCount) || 0,
+      sistersCount: Number(formData.sistersCount) || 0,
+      livingArrangementPreference: formData.livingArrangementPreference || 'Flexible',
+      religiousCommitment: formData.religion || 'Islam (Practicing)',
+      requirements: {
+        gender: formData.gender === 'male' ? 'female' : 'male',
+        ageRange: [Number(formData.partnerAgeMin) || 20, Number(formData.partnerAgeMax) || 30],
+        flexibleAge: true,
+        preferredCities: partnerCities.length > 0 ? partnerCities : ['Lahore'],
+        relocationWillingness: (formData.relocationWillingness as any) || 'Maybe',
+        maritalStatusPreference: [formData.partnerMaritalStatus || 'Never Married'],
+        childrenPreference: 'Prefer no children',
+        minEducation: formData.partnerMinEducation || "Bachelor's",
+        preferredFields: ['Any field'],
+        preferredProfessions: ['Any respectable profession'],
+        financialLifestyle: 'Moderate',
+        familyTypePreference: 'No preference',
+        livingArrangementAfterMarriage: 'Flexible',
+        religiousImportance: 'Important',
+        personalityTraits: ['Kind', 'Respectful', 'Family-oriented'],
+        lifestylePreferences: ['Balanced'],
+        smokingPreference: (formData.smokingPreference as any) || 'Must not smoke',
+        careerAfterMarriage: 'Flexible',
+        futureChildrenPreference: 'Want children',
+        marriageTimeline: 'Within 1 year',
+        seriousnessLevel: formData.seriousnessLevel || 'Marriage کے لیے serious',
+        friendshipBeforeMarriage: 'Prefer direct serious rishta',
+        dealBreakers: dealBreakersList,
+        importantQualities: ['Mutual respect', 'Loyalty', 'Good communication'],
+        flexibleIn: ['City', 'Cast'],
+        mustHaves: ['Religious & Family values', 'Honesty'],
+        idealPartnerSummary: formData.idealPartnerSummary || `Talash hai aik mukhlis hamsafar ki jiski umar ${formData.partnerAgeMin || 22}-${formData.partnerAgeMax || 30} saal aur taleem kam az kam ${formData.partnerMinEducation || "Bachelor's"} ho.`,
+      },
       verificationStatus: 'unsubmitted',
       badges: {
         mobileVerified: true,
@@ -249,7 +302,7 @@ export default function Home() {
     // Sync to Supabase Cloud
     await insertCloudProfile(newProfile);
 
-    triggerToast(`Mubarak ho ${formData.fullName}! Aapka Hamsafar profile tayyar ho gaya hai.`);
+    triggerToast(`Mubarak ho ${formData.fullName}! Aapka Hamsafar profile mukammal tayyar ho gaya hai.`);
 
     // Add welcoming notification
     const welcomeNotif: AppNotification = {

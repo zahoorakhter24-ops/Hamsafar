@@ -3,20 +3,45 @@ import { UserProfile, INITIAL_PROFILES } from '@/data/profiles';
 
 // Convert Supabase DB Row to UserProfile interface
 export const mapDbRowToProfile = (row: any): UserProfile => {
+  let displayAbout = row.about || '';
+  let meta: any = {};
+  if (row.about && row.about.includes('---HSDATA---')) {
+    const parts = row.about.split('---HSDATA---');
+    displayAbout = parts[0].trim();
+    try {
+      meta = JSON.parse(parts[1]);
+    } catch (e) {}
+  }
+
   return {
     id: row.id,
     name: row.name,
     age: row.age,
     gender: row.gender,
+    dob: meta.dob,
     city: row.city,
     country: row.country || 'Pakistan',
+    nativeCity: meta.nativeCity,
     profession: row.profession,
     education: row.education,
+    degreeField: meta.degreeField,
+    institution: meta.institution,
+    jobType: meta.jobType,
+    incomeRange: meta.incomeRange,
     languages: row.languages || ['Urdu', 'English'],
     purpose: row.purpose || ['rishta'],
-    avatar: row.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-    about: row.about || '',
-    maritalStatus: row.marital_status || 'Single',
+    seriousnessLevel: meta.seriousnessLevel,
+    avatar: row.avatar_url || (row.gender === 'female' ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80' : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80'),
+    about: displayAbout,
+    maritalStatus: row.marital_status || 'Never Married',
+    hasChildren: meta.hasChildren,
+    childrenCount: meta.childrenCount,
+    familyType: meta.familyType,
+    parentsStatus: meta.parentsStatus,
+    brothersCount: meta.brothersCount,
+    sistersCount: meta.sistersCount,
+    livingArrangementPreference: meta.livingArrangementPreference,
+    requirements: meta.requirements,
     familyInvolvementPreference: row.family_involvement || 'Preferred',
     religiousCommitment: row.religious_practice || 'Practicing',
     verificationStatus: row.verification_status || (row.identity_verified ? 'verified' : 'unsubmitted'),
@@ -34,6 +59,26 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
 
 // Convert UserProfile to Supabase DB Row format
 export const mapProfileToDbRow = (p: UserProfile) => {
+  const meta = {
+    dob: p.dob,
+    nativeCity: p.nativeCity,
+    degreeField: p.degreeField,
+    institution: p.institution,
+    jobType: p.jobType,
+    incomeRange: p.incomeRange,
+    seriousnessLevel: p.seriousnessLevel,
+    hasChildren: p.hasChildren,
+    childrenCount: p.childrenCount,
+    familyType: p.familyType,
+    parentsStatus: p.parentsStatus,
+    brothersCount: p.brothersCount,
+    sistersCount: p.sistersCount,
+    livingArrangementPreference: p.livingArrangementPreference,
+    requirements: p.requirements,
+  };
+
+  const serializedAbout = `${p.about || ''}\n\n---HSDATA---${JSON.stringify(meta)}`;
+
   return {
     id: p.id.startsWith('user-') ? undefined : p.id,
     name: p.name,
@@ -46,8 +91,8 @@ export const mapProfileToDbRow = (p: UserProfile) => {
     languages: p.languages,
     purpose: p.purpose,
     avatar_url: p.avatar,
-    about: p.about,
-    marital_status: p.maritalStatus || 'Single',
+    about: serializedAbout,
+    marital_status: p.maritalStatus || 'Never Married',
     family_involvement: p.familyInvolvementPreference || 'Preferred',
     religious_practice: p.religiousCommitment || 'Practicing',
     verification_status: p.verificationStatus || 'unsubmitted',
