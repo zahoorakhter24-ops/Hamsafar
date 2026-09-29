@@ -16,8 +16,48 @@ import {
   BookOpen,
   Smartphone,
   CheckCircle2,
-  Send
+  Send,
+  Camera,
+  Upload,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
+
+// Client-side canvas image compression to keep payload small & fast (~30-50KB)
+const compressImage = (file: File, maxWidth = 500, quality = 0.75): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      if (typeof window === 'undefined') return resolve('');
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxWidth) {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -35,6 +75,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     // Step 1: Bunyadi Maloomat
     fullName: '',
     gender: 'male' as 'male' | 'female',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+    hasCustomPhoto: false,
+    additionalPhotos: [] as string[],
     dob: '',
     age: 0,
     currentCity: 'Lahore',
@@ -128,6 +171,54 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     } else {
       setError('Ghalat OTP code! Bara-e-meherbani SMS notification mein diya gaya 4-digit code check karein.');
     }
+  };
+
+  const handleGenderChange = (newGender: 'male' | 'female') => {
+    setFormData((prev) => ({
+      ...prev,
+      gender: newGender,
+      avatar: prev.hasCustomPhoto
+        ? prev.avatar
+        : newGender === 'female'
+        ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+    }));
+  };
+
+  const handleMainPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const compressed = await compressImage(e.target.files[0], 500, 0.75);
+        setFormData((prev) => ({ ...prev, avatar: compressed, hasCustomPhoto: true }));
+      } catch (err) {
+        setError('Tasveer upload karne mein masla hua. Dobara try karein.');
+      }
+    }
+  };
+
+  const handleAdditionalPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      if (formData.additionalPhotos.length >= 3) {
+        setError('Aap zyada se zyada 3 additional photos add kar saktay hain.');
+        return;
+      }
+      try {
+        const compressed = await compressImage(e.target.files[0], 500, 0.75);
+        setFormData((prev) => ({
+          ...prev,
+          additionalPhotos: [...prev.additionalPhotos, compressed],
+        }));
+      } catch (err) {
+        setError('Tasveer upload karne mein masla hua.');
+      }
+    }
+  };
+
+  const handleRemoveAdditionalPhoto = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      additionalPhotos: prev.additionalPhotos.filter((_, i) => i !== index),
+    }));
   };
 
   if (!isOpen) return null;
@@ -275,7 +366,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Jins (Gender) *</label>
                   <select
                     value={formData.gender}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value as any })}
+                    onChange={(e) => handleGenderChange(e.target.value as any)}
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-300 bg-white"
                   >
                     <option value="male">Male (Mard)</option>
@@ -297,6 +388,129 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                       Age: {formData.age} Years (Auto-calculated)
                     </span>
                   )}
+                </div>
+              </div>
+
+              {/* Profile Photo (Main & Additional) */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800">
+                      Profile Photos (Main Photo & Gallery)
+                    </label>
+                    <p className="text-[10px] text-slate-500">
+                      Clear face photo preferred. Inappropriate ya fake tasweer block ho sakti hai.
+                    </p>
+                  </div>
+                  {formData.hasCustomPhoto ? (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Photo Added
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                      Default Avatar Active
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3.5">
+                  {/* Main Avatar Preview */}
+                  <div className="relative group shrink-0">
+                    <img
+                      src={formData.avatar}
+                      alt="Profile preview"
+                      className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-600 shadow-sm"
+                    />
+                    <label
+                      htmlFor="main-photo-upload"
+                      className="absolute -bottom-1 -right-1 bg-slate-900 hover:bg-emerald-600 text-white p-1.5 rounded-xl cursor-pointer transition-colors shadow-md"
+                      title="Upload new photo"
+                    >
+                      <Camera size={13} />
+                    </label>
+                    <input
+                      id="main-photo-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleMainPhotoUpload}
+                      className="hidden"
+                    />
+                  </div>
+
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="main-photo-upload"
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Upload size={13} />
+                        {formData.hasCustomPhoto ? 'Change Main Photo' : 'Upload Main Photo'}
+                      </label>
+
+                      {formData.hasCustomPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            avatar: prev.gender === 'female'
+                              ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
+                              : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
+                            hasCustomPhoto: false
+                          }))}
+                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      PNG, JPG ya WebP. Mobile gallery ya camera se upload karein.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Additional Photos Gallery */}
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-slate-700">
+                      Additional Photos (Max 3 - Mehram / Family Photos):
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {formData.additionalPhotos.length}/3 photos
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {formData.additionalPhotos.map((photo, idx) => (
+                      <div key={idx} className="relative group w-14 h-14 rounded-xl overflow-hidden border border-slate-300">
+                        <img src={photo} alt={`Additional ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAdditionalPhoto(idx)}
+                          className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={14} className="text-rose-400" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {formData.additionalPhotos.length < 3 && (
+                      <label
+                        htmlFor="additional-photo-upload"
+                        className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-600 bg-white flex flex-col items-center justify-center text-slate-400 hover:text-emerald-600 cursor-pointer transition-colors"
+                      >
+                        <ImageIcon size={16} />
+                        <span className="text-[9px] font-bold mt-0.5">+ Add</span>
+                        <input
+                          id="additional-photo-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAdditionalPhotoUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
               </div>
 

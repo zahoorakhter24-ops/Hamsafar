@@ -32,6 +32,7 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
     purpose: row.purpose || ['rishta'],
     seriousnessLevel: meta.seriousnessLevel,
     avatar: row.avatar_url || (row.gender === 'female' ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80' : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80'),
+    additionalPhotos: meta.additionalPhotos,
     about: displayAbout,
     maritalStatus: row.marital_status || 'Never Married',
     hasChildren: meta.hasChildren,
@@ -44,8 +45,8 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
     requirements: meta.requirements,
     familyInvolvementPreference: row.family_involvement || 'Preferred',
     religiousCommitment: row.religious_practice || 'Practicing',
-    verificationStatus: row.verification_status || (row.identity_verified ? 'verified' : 'unsubmitted'),
-    submittedDocuments: row.submitted_documents || undefined,
+    verificationStatus: meta.verificationStatus || (row.identity_verified ? 'verified' : 'unsubmitted'),
+    submittedDocuments: meta.submittedDocuments || undefined,
     badges: {
       mobileVerified: row.mobile_verified ?? true,
       identityVerified: row.identity_verified ?? false,
@@ -53,11 +54,11 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
       familyVerified: row.family_verified ?? false,
       noActiveRestrictions: row.no_active_restrictions ?? true,
     },
-    isDemo: row.is_demo ?? false,
+    isDemo: meta.isDemo ?? false,
   };
 };
 
-// Convert UserProfile to Supabase DB Row format
+// Convert UserProfile to Supabase DB Row format (Strictly valid columns only)
 export const mapProfileToDbRow = (p: UserProfile) => {
   const meta = {
     dob: p.dob,
@@ -75,34 +76,34 @@ export const mapProfileToDbRow = (p: UserProfile) => {
     sistersCount: p.sistersCount,
     livingArrangementPreference: p.livingArrangementPreference,
     requirements: p.requirements,
+    additionalPhotos: p.additionalPhotos,
+    verificationStatus: p.verificationStatus || 'unsubmitted',
+    submittedDocuments: p.submittedDocuments || null,
+    isDemo: p.isDemo ?? false,
   };
 
   const serializedAbout = `${p.about || ''}\n\n---HSDATA---${JSON.stringify(meta)}`;
 
   return {
-    id: p.id.startsWith('user-') ? undefined : p.id,
     name: p.name,
     age: p.age,
     gender: p.gender,
     city: p.city,
-    country: p.country,
+    country: p.country || 'Pakistan',
     profession: p.profession,
     education: p.education,
-    languages: p.languages,
-    purpose: p.purpose,
+    languages: p.languages || ['Urdu', 'English'],
+    purpose: p.purpose || ['rishta'],
     avatar_url: p.avatar,
     about: serializedAbout,
     marital_status: p.maritalStatus || 'Never Married',
     family_involvement: p.familyInvolvementPreference || 'Preferred',
     religious_practice: p.religiousCommitment || 'Practicing',
-    verification_status: p.verificationStatus || 'unsubmitted',
-    submitted_documents: p.submittedDocuments || null,
-    mobile_verified: p.badges.mobileVerified,
-    identity_verified: p.badges.identityVerified,
-    photo_verified: p.badges.photoVerified,
-    family_verified: p.badges.familyVerified,
-    no_active_restrictions: p.badges.noActiveRestrictions,
-    is_demo: p.isDemo ?? false,
+    mobile_verified: p.badges?.mobileVerified ?? true,
+    identity_verified: p.badges?.identityVerified ?? false,
+    photo_verified: p.badges?.photoVerified ?? false,
+    family_verified: p.badges?.familyVerified ?? false,
+    no_active_restrictions: p.badges?.noActiveRestrictions ?? true,
   };
 };
 
@@ -143,11 +144,9 @@ export const fetchCloudProfiles = async (): Promise<UserProfile[]> => {
     }
 
     if (!data || data.length === 0) {
-      // If demo was cleared, don't show demo profiles
       if (demoCleared) {
         return [];
       }
-      // If table is totally new and demo not cleared, populate demo data into cloud once
       return INITIAL_PROFILES;
     }
 
@@ -191,13 +190,29 @@ export const updateCloudProfile = async (id: string, updates: Partial<UserProfil
 
   try {
     const rowUpdates: any = {};
-    if (updates.verificationStatus) rowUpdates.verification_status = updates.verificationStatus;
-    if (updates.submittedDocuments) rowUpdates.submitted_documents = updates.submittedDocuments;
+    if (updates.avatar) rowUpdates.avatar_url = updates.avatar;
     if (updates.badges) {
       if (updates.badges.identityVerified !== undefined) rowUpdates.identity_verified = updates.badges.identityVerified;
       if (updates.badges.photoVerified !== undefined) rowUpdates.photo_verified = updates.badges.photoVerified;
       if (updates.badges.familyVerified !== undefined) rowUpdates.family_verified = updates.badges.familyVerified;
       if (updates.badges.noActiveRestrictions !== undefined) rowUpdates.no_active_restrictions = updates.badges.noActiveRestrictions;
+    }
+
+    if (updates.verificationStatus || updates.submittedDocuments || updates.about) {
+      const { data: existing } = await supabase.from('profiles').select('about').eq('id', id).single();
+      if (existing) {
+        let displayAbout = existing.about || '';
+        let meta: any = {};
+        if (existing.about && existing.about.includes('---HSDATA---')) {
+          const parts = existing.about.split('---HSDATA---');
+          displayAbout = parts[0].trim();
+          try { meta = JSON.parse(parts[1]); } catch (e) {}
+        }
+        if (updates.verificationStatus) meta.verificationStatus = updates.verificationStatus;
+        if (updates.submittedDocuments) meta.submittedDocuments = updates.submittedDocuments;
+        if (updates.about) displayAbout = updates.about;
+        rowUpdates.about = `${displayAbout}\n\n---HSDATA---${JSON.stringify(meta)}`;
+      }
     }
 
     await supabase.from('profiles').update(rowUpdates).eq('id', id);
@@ -220,8 +235,9 @@ export const deleteCloudProfile = async (id: string) => {
 export const clearCloudDemoProfiles = async () => {
   if (!isSupabaseConfigured()) return;
   try {
-    // 1. Delete all demo rows
-    await supabase.from('profiles').delete().eq('is_demo', true);
+    // 1. Delete all demo rows by name
+    const demoNames = INITIAL_PROFILES.map((p) => p.name);
+    await supabase.from('profiles').delete().in('name', demoNames);
     
     // 2. Set permanent flag in profiles table so no device ever restores demo profiles
     await supabase.from('profiles').upsert([
@@ -233,7 +249,6 @@ export const clearCloudDemoProfiles = async () => {
         profession: 'System',
         education: 'System',
         purpose: ['rishta'],
-        is_demo: false,
       }
     ]);
   } catch (err) {

@@ -240,9 +240,10 @@ export default function Home() {
       languages: formData.languages || ['Urdu', 'English'],
       purpose: formData.purpose || ['rishta'],
       seriousnessLevel: formData.seriousnessLevel || 'Marriage کے لیے serious',
-      avatar: formData.gender === 'female'
+      avatar: formData.avatar || (formData.gender === 'female'
         ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
-        : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
+        : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80'),
+      additionalPhotos: formData.additionalPhotos || [],
       about: formData.aboutMe || 'Hamsafar verified member seeking genuine, respectful and family-aligned connections.',
       maritalStatus: formData.maritalStatus || 'Never Married',
       hasChildren: Boolean(formData.hasChildren),
@@ -286,7 +287,7 @@ export default function Home() {
       badges: {
         mobileVerified: true,
         identityVerified: false,
-        photoVerified: false,
+        photoVerified: Boolean(formData.hasCustomPhoto),
         familyVerified: false,
         noActiveRestrictions: true,
       },
@@ -300,7 +301,16 @@ export default function Home() {
     localStorage.setItem('hamsafar_current_user', JSON.stringify(newProfile));
     
     // Sync to Supabase Cloud
-    await insertCloudProfile(newProfile);
+    const saved = await insertCloudProfile(newProfile);
+    if (saved && saved.id) {
+      newProfile.id = saved.id;
+      setCurrentUser(newProfile);
+      localStorage.setItem('hamsafar_current_user', JSON.stringify(newProfile));
+    }
+    const fresh = await fetchCloudProfiles();
+    if (fresh && fresh.length > 0) {
+      saveProfilesState(fresh);
+    }
 
     triggerToast(`Mubarak ho ${formData.fullName}! Aapka Hamsafar profile mukammal tayyar ho gaya hai.`);
 
