@@ -263,7 +263,7 @@ export default function Home() {
     saveNotifications([welcomeNotif, ...notifications]);
   };
 
-  const handleVerificationSubmitted = (docData: any) => {
+  const handleVerificationSubmitted = async (docData: any) => {
     if (currentUser) {
       const updatedUser: UserProfile = {
         ...currentUser,
