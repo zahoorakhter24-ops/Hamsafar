@@ -61,6 +61,21 @@ export const mapProfileToDbRow = (p: UserProfile) => {
   };
 };
 
+// Check if demo data was globally cleared in Supabase
+export const isDemoGloballyCleared = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('name', 'SYSTEM_FLAG_DEMO_CLEARED')
+      .limit(1);
+    return Boolean(data && data.length > 0);
+  } catch (err) {
+    return false;
+  }
+};
+
 // Fetch all profiles from Supabase cloud (with fallback)
 export const fetchCloudProfiles = async (): Promise<UserProfile[]> => {
   if (!isSupabaseConfigured()) {
@@ -68,17 +83,34 @@ export const fetchCloudProfiles = async (): Promise<UserProfile[]> => {
   }
 
   try {
+    // 1. Check if admin has permanently cleared demo data
+    const demoCleared = await isDemoGloballyCleared();
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
+      .neq('name', 'SYSTEM_FLAG_DEMO_CLEARED')
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      console.warn('Supabase profiles empty or error, using initial defaults:', error);
+    if (error) {
+      console.warn('Supabase fetch error, fallback:', error);
+      return demoCleared ? [] : INITIAL_PROFILES;
+    }
+
+    if (!data || data.length === 0) {
+      // If demo was cleared, don't show demo profiles
+      if (demoCleared) {
+        return [];
+      }
+      // If table is totally new and demo not cleared, populate demo data into cloud once
       return INITIAL_PROFILES;
     }
 
-    return data.map(mapDbRowToProfile);
+    const loaded = data.map(mapDbRowToProfile);
+    if (demoCleared) {
+      return loaded.filter((p) => !p.isDemo);
+    }
+    return loaded;
   } catch (err) {
     console.error('Failed to fetch from cloud:', err);
     return INITIAL_PROFILES;
@@ -139,11 +171,26 @@ export const deleteCloudProfile = async (id: string) => {
   }
 };
 
-// Delete all demo profiles in cloud
+// Delete all demo profiles in cloud & set global flag
 export const clearCloudDemoProfiles = async () => {
   if (!isSupabaseConfigured()) return;
   try {
+    // 1. Delete all demo rows
     await supabase.from('profiles').delete().eq('is_demo', true);
+    
+    // 2. Set permanent flag in profiles table so no device ever restores demo profiles
+    await supabase.from('profiles').upsert([
+      {
+        name: 'SYSTEM_FLAG_DEMO_CLEARED',
+        age: 99,
+        gender: 'male',
+        city: 'System',
+        profession: 'System',
+        education: 'System',
+        purpose: ['rishta'],
+        is_demo: false,
+      }
+    ]);
   } catch (err) {
     console.error('Clear cloud demo error:', err);
   }
