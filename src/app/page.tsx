@@ -15,6 +15,7 @@ import { NotificationDropdown } from '@/components/NotificationDropdown';
 import { LoginModal } from '@/components/LoginModal';
 import { AdminDashboardModal } from '@/components/AdminDashboardModal';
 import { DetailedProfileModal } from '@/components/DetailedProfileModal';
+import { InboxModal } from '@/components/InboxModal';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   ShieldCheck,
@@ -64,6 +65,7 @@ export default function Home() {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showMehramModal, setShowMehramModal] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [showInboxModal, setShowInboxModal] = useState(false);
   
   // Notification State
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -137,7 +139,7 @@ export default function Home() {
                   recipientId: 'me',
                   senderName: cn.senderName,
                   senderAvatar: cn.senderAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
-                  type: 'connection_request',
+                  type: (cn.type as any) || 'connection_request',
                   title: cn.title,
                   message: cn.message,
                   timestamp: 'Recently',
@@ -508,8 +510,8 @@ export default function Home() {
       prev.map((r) => (r.id === req.id ? { ...r, status: 'accepted' } : r))
     );
 
-    // Sync cloud status
-    await updateCloudConnectionRequestStatus(req.id, 'accepted');
+    // Sync cloud status & notify sender across devices
+    await updateCloudConnectionRequestStatus(req.id, 'accepted', currentUser || undefined);
 
     // Notify user that connection is accepted & chat unlocked
     const acceptNotif: AppNotification = {
@@ -785,6 +787,10 @@ export default function Home() {
                   setShowNotificationDropdown(false);
                   setShowRequestsModal(true);
                 }}
+                onOpenInbox={() => {
+                  setShowNotificationDropdown(false);
+                  setShowInboxModal(true);
+                }}
                 onRequestBrowserPermission={requestBrowserPermission}
                 browserPermissionGranted={browserPushAllowed}
               />
@@ -795,6 +801,7 @@ export default function Home() {
               onClick={() => {
                 setShowRequestsModal(true);
                 setShowNotificationDropdown(false);
+                setShowInboxModal(false);
               }}
               className="relative p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition-colors"
               title="Connection Requests"
@@ -803,6 +810,25 @@ export default function Home() {
               {pendingRequestsCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
                   {pendingRequestsCount}
+                </span>
+              )}
+            </button>
+
+            {/* Inbox / Messages Button */}
+            <button
+              onClick={() => {
+                setShowInboxModal(true);
+                setShowNotificationDropdown(false);
+                setShowRequestsModal(false);
+              }}
+              className="relative p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition-colors flex items-center gap-1.5"
+              title="Inbox & Paighamat"
+            >
+              <MessageSquare size={18} className="text-teal-400" />
+              <span className="hidden xl:inline text-xs font-bold text-slate-200">Inbox</span>
+              {notifications.some((n) => n.type === 'chat_message' && !n.read) && (
+                <span className="absolute -top-1 -right-1 bg-teal-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-md">
+                  {notifications.filter((n) => n.type === 'chat_message' && !n.read).length}
                 </span>
               )}
             </button>
@@ -1155,7 +1181,23 @@ export default function Home() {
 
       <ChatModal
         partner={chatPartner}
+        currentUser={currentUser}
         onClose={() => setChatPartner(null)}
+      />
+
+      <InboxModal
+        isOpen={showInboxModal}
+        onClose={() => setShowInboxModal(false)}
+        currentUser={currentUser}
+        allProfiles={profiles}
+        onOpenChatWith={(partner) => {
+          setShowInboxModal(false);
+          setChatPartner(partner);
+        }}
+        onOpenRequests={() => {
+          setShowInboxModal(false);
+          setShowRequestsModal(true);
+        }}
       />
 
       {showRepDashboard && (

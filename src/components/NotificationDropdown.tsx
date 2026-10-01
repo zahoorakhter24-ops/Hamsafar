@@ -9,6 +9,7 @@ interface NotificationDropdownProps {
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
   onRequestClick: (notif: AppNotification) => void;
+  onOpenInbox?: () => void;
   onRequestBrowserPermission: () => void;
   browserPermissionGranted: boolean;
 }
@@ -20,6 +21,7 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
   onMarkAsRead,
   onMarkAllAsRead,
   onRequestClick,
+  onOpenInbox,
   onRequestBrowserPermission,
   browserPermissionGranted,
 }) => {
@@ -90,6 +92,9 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                   onMarkAsRead(notif.id);
                   if (notif.type === 'connection_request') {
                     onRequestClick(notif);
+                  } else if (notif.type === 'chat_message' && onOpenInbox) {
+                    onClose();
+                    onOpenInbox();
                   }
                 }}
                 className={`p-3.5 px-4 flex items-start gap-3 hover:bg-slate-50 transition-colors cursor-pointer ${
@@ -105,6 +110,11 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                   {notif.type === 'connection_request' && (
                     <span className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-0.5 rounded-full ring-2 ring-white">
                       <UserCheck size={10} />
+                    </span>
+                  )}
+                  {notif.type === 'chat_message' && (
+                    <span className="absolute -bottom-1 -right-1 bg-teal-600 text-white p-0.5 rounded-full ring-2 ring-white">
+                      <MessageSquare size={10} />
                     </span>
                   )}
                   {notif.type === 'safety_alert' && (
@@ -129,6 +139,11 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
                   {notif.type === 'connection_request' && (
                     <span className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">
                       Click to View & Accept Request →
+                    </span>
+                  )}
+                  {notif.type === 'chat_message' && (
+                    <span className="inline-block mt-1 text-[10px] font-bold text-teal-700 bg-teal-100/60 px-2 py-0.5 rounded-md">
+                      Click to Open Inbox & Reply →
                     </span>
                   )}
                 </div>

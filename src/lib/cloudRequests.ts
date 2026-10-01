@@ -143,17 +143,39 @@ export const fetchCloudConnectionRequests = async (
 // Accept or decline connection request in cloud
 export const updateCloudConnectionRequestStatus = async (
   requestId: string,
-  newStatus: 'accepted' | 'declined'
+  newStatus: 'accepted' | 'declined',
+  acceptorProfile?: UserProfile
 ): Promise<boolean> => {
   if (!isSupabaseConfigured() || !requestId) return false;
 
   try {
-    const { error } = await supabase
+    const { data: req, error } = await supabase
       .from('connection_requests')
       .update({ status: newStatus })
-      .eq('id', requestId);
+      .eq('id', requestId)
+      .select()
+      .single();
 
-    return !error;
+    if (error) return false;
+
+    // If accepted, notify the original sender so both devices are alerted!
+    if (newStatus === 'accepted' && req && req.sender_id) {
+      const senderName = acceptorProfile?.name || 'Aapke partner';
+      const senderAvatar = acceptorProfile?.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400';
+      await supabase.from('notifications').insert([
+        {
+          user_id: req.sender_id,
+          sender_name: senderName,
+          sender_avatar: senderAvatar,
+          type: 'connection_accepted',
+          title: 'Request Accept Ho Gayi! 🤝',
+          message: `${senderName} ne aapki connection request accept kar li hai. Inbox mein ba-asaani chat karein!`,
+          read: false,
+        },
+      ]);
+    }
+
+    return true;
   } catch (err) {
     return false;
   }

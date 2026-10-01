@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '@/data/profiles';
 import { ShieldAlert, Send, PhoneOff, AlertOctagon, UserCheck, X } from 'lucide-react';
+import { fetchCloudMessagesBetween, sendCloudMessage, markMessagesAsRead } from '@/lib/cloudMessages';
 
 interface ChatModalProps {
   partner: UserProfile | null;
+  currentUser: UserProfile | null;
   onClose: () => void;
 }
 
@@ -22,7 +24,7 @@ const SCAM_PATTERNS = [
   { regex: /(whatsapp|number|telegram|insta|contact me on)/i, message: 'ℹ️ Safety Tip: Prematurely leaving Hamsafar removes automated safety and representative oversight.' }
 ];
 
-export const ChatModal: React.FC<ChatModalProps> = ({ partner, onClose }) => {
+export const ChatModal: React.FC<ChatModalProps> = ({ partner, currentUser, onClose }) => {
   if (!partner) return null;
 
   const [messages, setMessages] = useState<Message[]>([
@@ -36,34 +38,97 @@ export const ChatModal: React.FC<ChatModalProps> = ({ partner, onClose }) => {
       id: 'm-1',
       sender: 'them',
       text: `Assalam-o-Alaikum! Thank you for connecting. I am ${partner.name}. Let me know if you would like to discuss our profiles.`,
-      timestamp: '1 min ago',
+      timestamp: 'Just now',
     },
   ]);
   const [inputText, setInputText] = useState('');
   const [activeAlert, setActiveAlert] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  // Auto scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Sync cloud messages on mount & every 3s
+  useEffect(() => {
+    if (!currentUser || !partner) return;
+
+    const loadMessages = async () => {
+      try {
+        const cloudMsgs = await fetchCloudMessagesBetween(currentUser.id, partner.id);
+        if (cloudMsgs && cloudMsgs.length > 0) {
+          const formatted: Message[] = [
+            {
+              id: 'sys-1',
+              sender: 'system',
+              text: 'Assalam-o-Alaikum. You are connected in a verified secure chat. End-to-end safety monitoring is enabled.',
+              timestamp: 'Secure Session',
+            },
+          ];
+
+          cloudMsgs.forEach((cm) => {
+            const isMe = cm.senderId === currentUser.id;
+            formatted.push({
+              id: cm.id,
+              sender: isMe ? 'me' : 'them',
+              text: cm.content,
+              timestamp: new Date(cm.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            });
+
+            if (cm.hasSafetyWarning && cm.warningType) {
+              formatted.push({
+                id: `warn-${cm.id}`,
+                sender: 'system',
+                text: cm.warningType,
+                timestamp: 'System',
+                isWarning: true,
+              });
+            }
+          });
+
+          setMessages(formatted);
+          markMessagesAsRead(partner.id, currentUser.id);
+        }
+      } catch (err) {
+        console.error('Failed to load chat messages:', err);
+      }
+    };
+
+    loadMessages();
+    const interval = setInterval(loadMessages, 3000);
+    return () => clearInterval(interval);
+  }, [currentUser, partner]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isSending) return;
+
+    const textToSend = inputText.trim();
+    setInputText('');
 
     // Detect Scam or High-risk keywords
     let warningTriggered: string | null = null;
     for (const pattern of SCAM_PATTERNS) {
-      if (pattern.regex.test(inputText)) {
+      if (pattern.regex.test(textToSend)) {
         warningTriggered = pattern.message;
         break;
       }
     }
 
-    const newMsg: Message = {
+    const optimisticMsg: Message = {
       id: `msg-${Date.now()}`,
       sender: 'me',
-      text: inputText,
+      text: textToSend,
       timestamp: 'Just now',
     };
 
-    setMessages((prev) => [...prev, newMsg]);
-    setInputText('');
+    setMessages((prev) => [...prev, optimisticMsg]);
 
     if (warningTriggered) {
       setActiveAlert(warningTriggered);
@@ -80,6 +145,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({ partner, onClose }) => {
           },
         ]);
       }, 400);
+    }
+
+    // Persist to Supabase if logged in
+    if (currentUser) {
+      setIsSending(true);
+      try {
+        await sendCloudMessage(currentUser, partner, textToSend, warningTriggered || undefined);
+      } catch (e) {
+        console.error('Error sending message:', e);
+      } finally {
+        setIsSending(false);
+      }
     }
   };
 
@@ -171,6 +248,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({ partner, onClose }) => {
               </div>
             );
           })}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Bar */}
@@ -187,7 +265,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({ partner, onClose }) => {
           />
           <button
             type="submit"
-            className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors shrink-0"
+            disabled={isSending || !inputText.trim()}
+            className="p-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl shadow-xs transition-colors shrink-0"
           >
             <Send size={16} />
           </button>

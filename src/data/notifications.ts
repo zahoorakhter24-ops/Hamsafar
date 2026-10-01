@@ -3,7 +3,7 @@ export interface AppNotification {
   recipientId: string;
   senderName: string;
   senderAvatar: string;
-  type: 'connection_request' | 'connection_accepted' | 'safety_alert' | 'rep_message' | 'mehram_activity';
+  type: 'connection_request' | 'connection_accepted' | 'safety_alert' | 'rep_message' | 'mehram_activity' | 'chat_message';
   title: string;
   message: string;
   timestamp: string;
