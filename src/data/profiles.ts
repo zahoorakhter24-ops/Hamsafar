@@ -34,6 +34,8 @@ export interface UserProfile {
   age: number;
   gender: 'male' | 'female';
   dob?: string;
+  mobileNumber?: string;
+  password?: string;
   city: string;
   country: string;
   nativeCity?: string;

@@ -19,6 +19,8 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
     age: row.age,
     gender: row.gender,
     dob: meta.dob,
+    mobileNumber: row.mobile_number || meta.mobileNumber,
+    password: meta.password,
     city: row.city,
     country: row.country || 'Pakistan',
     nativeCity: meta.nativeCity,
@@ -62,6 +64,8 @@ export const mapDbRowToProfile = (row: any): UserProfile => {
 export const mapProfileToDbRow = (p: UserProfile) => {
   const meta = {
     dob: p.dob,
+    password: p.password,
+    mobileNumber: p.mobileNumber,
     nativeCity: p.nativeCity,
     degreeField: p.degreeField,
     institution: p.institution,
@@ -90,6 +94,7 @@ export const mapProfileToDbRow = (p: UserProfile) => {
     gender: p.gender,
     city: p.city,
     country: p.country || 'Pakistan',
+    mobile_number: p.mobileNumber || undefined,
     profession: p.profession,
     education: p.education,
     languages: p.languages || ['Urdu', 'English'],
@@ -105,6 +110,30 @@ export const mapProfileToDbRow = (p: UserProfile) => {
     family_verified: p.badges?.familyVerified ?? false,
     no_active_restrictions: p.badges?.noActiveRestrictions ?? true,
   };
+};
+
+// Authenticate user by Mobile Number + Password
+export const authenticateCloudUser = async (
+  mobileNumber: string,
+  pass: string
+): Promise<{ user: UserProfile | null; error?: string }> => {
+  const cleanMobile = mobileNumber.replace(/[\s-]/g, '').trim();
+  const allProfiles = await fetchCloudProfiles();
+
+  const found = allProfiles.find((p) => {
+    const pMobile = (p.mobileNumber || '').replace(/[\s-]/g, '').trim();
+    return pMobile === cleanMobile;
+  });
+
+  if (!found) {
+    return { user: null, error: 'Yeh mobile number registered nahi hai. Naya account banayein.' };
+  }
+
+  if (found.password && found.password !== pass) {
+    return { user: null, error: 'Password ghalat hai. Dobara check karein.' };
+  }
+
+  return { user: found };
 };
 
 // Check if demo data was globally cleared in Supabase

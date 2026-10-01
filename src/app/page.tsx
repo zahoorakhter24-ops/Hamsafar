@@ -32,7 +32,8 @@ import {
   LogIn,
   LogOut,
   ShieldAlert,
-  UserPen
+  UserPen,
+  Sparkles
 } from 'lucide-react';
 
 import {
@@ -42,6 +43,13 @@ import {
   deleteCloudProfile,
   clearCloudDemoProfiles
 } from '@/lib/cloudProfiles';
+
+import {
+  sendCloudConnectionRequest,
+  fetchCloudNotifications,
+  fetchCloudConnectionRequests,
+  updateCloudConnectionRequestStatus
+} from '@/lib/cloudRequests';
 
 export default function Home() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -107,13 +115,78 @@ export default function Home() {
     };
     loadProfiles();
 
-    // Polling interval every 5 seconds for live multi-device sync
+    // Polling interval every 4 seconds for live multi-device sync
     const syncInterval = setInterval(async () => {
       const liveData = await fetchCloudProfiles();
       if (liveData && liveData.length > 0) {
         setProfiles(liveData);
       }
-    }, 5000);
+
+      // If user is logged in, sync their real cloud notifications & connection requests!
+      const userRaw = typeof window !== 'undefined' ? localStorage.getItem('hamsafar_current_user') : null;
+      if (userRaw) {
+        try {
+          const loggedUser: UserProfile = JSON.parse(userRaw);
+          if (loggedUser && loggedUser.id) {
+            // 1. Fetch real cloud notifications
+            const cloudNotifs = await fetchCloudNotifications(loggedUser.id);
+            if (cloudNotifs && cloudNotifs.length > 0) {
+              setNotifications((prev) => {
+                const mapped: AppNotification[] = cloudNotifs.map((cn) => ({
+                  id: cn.id,
+                  recipientId: 'me',
+                  senderName: cn.senderName,
+                  senderAvatar: cn.senderAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
+                  type: 'connection_request',
+                  title: cn.title,
+                  message: cn.message,
+                  timestamp: 'Recently',
+                  read: cn.read,
+                }));
+                const existingIds = new Set(prev.map((p) => p.id));
+                const newItems = mapped.filter((m) => !existingIds.has(m.id));
+                if (newItems.length > 0) {
+                  const first = newItems[0];
+                  triggerToast(`🔔 ${first.title}: ${first.message}`);
+                  firePushNotification(first.title, first.message);
+                  return [...newItems, ...prev];
+                }
+                return prev;
+              });
+            }
+
+            // 2. Fetch real cloud connection requests
+            const cloudReqs = await fetchCloudConnectionRequests(loggedUser.id, liveData || []);
+            if (cloudReqs && cloudReqs.length > 0) {
+              setConnectionRequests((prev) => {
+                const mapped: ConnectionRequestItem[] = cloudReqs.map((cr) => ({
+                  id: cr.id,
+                  sender: cr.sender || {
+                    id: cr.senderId,
+                    name: 'Hamsafar Member',
+                    age: 26,
+                    gender: 'female',
+                    city: 'Pakistan',
+                    country: 'Pakistan',
+                    profession: 'Professional',
+                    education: 'Graduate',
+                    languages: ['Urdu'],
+                    purpose: ['rishta'],
+                    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400',
+                    about: 'Aapko serious connection request bheji hai.',
+                    badges: { mobileVerified: true, identityVerified: false, photoVerified: false, familyVerified: false, noActiveRestrictions: true },
+                  },
+                  recipientId: 'me',
+                  status: cr.status,
+                  sentAt: 'Live',
+                }));
+                return mapped;
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    }, 4000);
 
     const savedNotifs = localStorage.getItem('hamsafar_notifications');
     if (savedNotifs) {
@@ -193,18 +266,27 @@ export default function Home() {
   };
 
   // When current user sends a connection request to someone
-  const handleConnectRequest = (profile: UserProfile) => {
-    triggerToast(`Safe Connection Request sent to ${profile.name}! Jab wo accept karenge toh private chat khulegi.`);
+  const handleConnectRequest = async (profile: UserProfile) => {
+    if (!currentUser) {
+      triggerToast('Pehle login karein ya naya account banayein taake request bhej sakein.');
+      setShowLogin(true);
+      return;
+    }
 
-    // Simulate sending notification to that person & echo back a confirmation notif
+    triggerToast(`Safe Connection Request sent to ${profile.name}! Unki device par notification alert bhej diya gaya hai.`);
+
+    // 1. Send to Supabase Cloud for real multi-device sync
+    await sendCloudConnectionRequest(currentUser, profile.id);
+
+    // 2. Local confirmation notification for sender
     const newNotif: AppNotification = {
       id: `notif-${Date.now()}`,
       recipientId: 'me',
       senderName: profile.name,
       senderAvatar: profile.avatar,
       type: 'connection_request',
-      title: 'Connection Request Sent',
-      message: `Aapne ${profile.name} ko request bheji hai. Response aane par foran alert milega.`,
+      title: 'Connection Request Sent 💍',
+      message: `Aapne ${profile.name} ko request bheji hai. Unke response aane par foran alert milega.`,
       timestamp: 'Just now',
       read: false,
     };
@@ -228,6 +310,8 @@ export default function Home() {
       age: Number(formData.age) || 25,
       gender: formData.gender,
       dob: formData.dob || undefined,
+      mobileNumber: formData.mobileNumber || undefined,
+      password: formData.password || undefined,
       city: formData.currentCity || formData.city || 'Lahore',
       country: formData.country || 'Pakistan',
       nativeCity: formData.nativeCity || undefined,
@@ -419,10 +503,13 @@ export default function Home() {
     triggerToast(`Mehram / Guardian (${data.guardianRole}) invite link generate ho gaya. Gold Badge activate ho chuka hai!`);
   };
 
-  const handleAcceptRequest = (req: ConnectionRequestItem) => {
+  const handleAcceptRequest = async (req: ConnectionRequestItem) => {
     setConnectionRequests((prev) =>
       prev.map((r) => (r.id === req.id ? { ...r, status: 'accepted' } : r))
     );
+
+    // Sync cloud status
+    await updateCloudConnectionRequestStatus(req.id, 'accepted');
 
     // Notify user that connection is accepted & chat unlocked
     const acceptNotif: AppNotification = {
@@ -439,12 +526,15 @@ export default function Home() {
     saveNotifications([acceptNotif, ...notifications]);
     firePushNotification('Connection Accepted!', `${req.sender.name} ke sath aapki chat activate ho gayi hai.`);
     triggerToast(`${req.sender.name} ki request accept kar li gayi hai. Ab aap safe chat kar sakte hain.`);
+    setChatPartner(req.sender);
   };
 
-  const handleDeclineRequest = (req: ConnectionRequestItem) => {
+  const handleDeclineRequest = async (req: ConnectionRequestItem) => {
     setConnectionRequests((prev) =>
       prev.map((r) => (r.id === req.id ? { ...r, status: 'declined' } : r))
     );
+    await updateCloudConnectionRequestStatus(req.id, 'declined');
+    triggerToast('Connection request ba-adab tareeqay se decline kar di gayi.');
   };
 
   // ADMIN ACTIONS (Syncs with Cloud Database)
@@ -635,26 +725,26 @@ export default function Home() {
         </div>
       )}
 
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
+      {/* Top Navigation - Luxury Dark Glassmorphism */}
+      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-emerald-500/20 text-white shadow-xl shadow-slate-950/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-600 to-emerald-400 flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 border border-emerald-400/30">
               <ShieldCheck size={24} />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xl font-extrabold tracking-tight text-slate-900">
-                  Hamsafar
+                <span className="text-xl font-black tracking-tight text-white flex items-center gap-1">
+                  Hamsafar <Sparkles size={14} className="text-amber-400 animate-pulse" />
                 </span>
-                <span className="text-sm font-arabic font-bold text-emerald-700">
+                <span className="text-sm font-bold text-amber-400 font-serif">
                   (ہمسفر)
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 font-medium hidden sm:block">
-                رابطے جو اعتماد سے بنیں • Trusted Connections
+              <p className="text-[10px] text-emerald-200/80 font-medium hidden sm:block">
+                رابطے جو اعتماد سے بنیں • Trusted Matrimonial & Halal Rishta
               </p>
             </div>
           </div>
@@ -671,14 +761,14 @@ export default function Home() {
                 }}
                 className={`p-2 rounded-xl border transition-all ${
                   showNotificationDropdown
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                    : 'text-slate-700 hover:bg-slate-100 border-slate-200'
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10 border-white/10'
                 }`}
                 title="Notifications"
               >
                 <Bell size={18} />
                 {unreadNotificationsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-md">
                     {unreadNotificationsCount}
                   </span>
                 )}
@@ -706,12 +796,12 @@ export default function Home() {
                 setShowRequestsModal(true);
                 setShowNotificationDropdown(false);
               }}
-              className="relative p-2 rounded-xl text-slate-700 hover:bg-slate-100 border border-slate-200"
+              className="relative p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition-colors"
               title="Connection Requests"
             >
               <UserCheck size={18} />
               {pendingRequestsCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
                   {pendingRequestsCount}
                 </span>
               )}
@@ -720,31 +810,31 @@ export default function Home() {
             {/* Mehram Mode Button */}
             <button
               onClick={() => setShowMehramModal(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 transition-all shadow-xs"
             >
-              <Users size={14} className="text-amber-700" />
+              <Users size={14} className="text-amber-400" />
               <span>Mehram Mode</span>
             </button>
 
             {/* Official ID Verification Button */}
             <button
               onClick={() => setShowVerifyModal(true)}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-300 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-400/30 transition-all shadow-xs"
             >
-              <BadgeCheck size={14} className="text-blue-700" />
+              <BadgeCheck size={14} className="text-blue-400" />
               <span>Verify CNIC</span>
             </button>
 
             {/* Representative Console */}
             <button
               onClick={() => setShowRepDashboard(true)}
-              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-white/10 hover:bg-white/15 transition-colors border border-white/10"
             >
-              <Headphones size={13} className="text-emerald-600" />
+              <Headphones size={13} className="text-emerald-400" />
               <span>Rep</span>
             </button>
 
-            {/* Install / Download App CTA with Native Mobile Install Prompt */}
+            {/* Install / Download App CTA */}
             <button
               onClick={async () => {
                 if (deferredPrompt) {
@@ -758,30 +848,30 @@ export default function Home() {
                   triggerToast('App install karne ke liye Chrome menu (3 dots) par "Install app" tap karein.');
                 }
               }}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all shadow-xs"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 transition-all shadow-xs"
             >
-              <Download size={13} className="text-emerald-700" />
+              <Download size={13} className="text-emerald-400" />
               <span className="hidden lg:inline">Install App</span>
               <span className="lg:hidden text-[11px]">Install</span>
             </button>
 
             {/* Join / Profile / Login */}
             {currentUser ? (
-              <div className="flex items-center gap-2 pl-1 border-l border-slate-200">
+              <div className="flex items-center gap-2 pl-2 border-l border-white/15">
                 <button
                   onClick={() => setShowDetailedProfile(true)}
-                  className="flex items-center gap-1.5 p-1 pr-2.5 rounded-full hover:bg-slate-100 transition-colors"
+                  className="flex items-center gap-2 p-1 pr-3 rounded-full hover:bg-white/10 transition-colors border border-emerald-500/30 bg-emerald-950/40"
                   title="Edit My Profile & Partner Requirements"
                 >
                   <img
                     src={currentUser.avatar}
                     alt={currentUser.name}
-                    className="w-8 h-8 rounded-full object-cover border border-emerald-500"
+                    className="w-8 h-8 rounded-full object-cover border-2 border-amber-400"
                   />
-                  <span className="text-xs font-bold text-slate-800 hidden sm:inline">
+                  <span className="text-xs font-bold text-white hidden sm:inline">
                     {currentUser.name.split(' ')[0]}
                   </span>
-                  <UserPen size={13} className="text-emerald-700 hidden sm:inline" />
+                  <UserPen size={13} className="text-amber-400 hidden sm:inline" />
                 </button>
                 <button
                   onClick={() => {
@@ -789,23 +879,23 @@ export default function Home() {
                     localStorage.removeItem('hamsafar_current_user');
                     triggerToast('Aapka account logout ho gaya hai.');
                   }}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-rose-400 transition-colors"
                   title="Logout"
                 >
                   <LogOut size={16} />
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowLogin(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all border border-slate-200"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 transition-all border border-white/20"
                 >
                   Login
                 </button>
                 <button
                   onClick={() => setShowRegister(true)}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all shadow-md shadow-emerald-600/20"
+                  className="px-4 py-1.5 rounded-xl text-xs font-black text-slate-950 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:from-amber-300 hover:to-amber-400 active:scale-95 transition-all shadow-lg shadow-amber-500/20 border border-amber-300"
                 >
                   Join Free
                 </button>
@@ -817,47 +907,42 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="bg-gradient-to-b from-emerald-950 via-slate-900 to-slate-900 text-white py-12 px-4 sm:px-6 relative overflow-hidden">
+      {/* Hero Section - Luxury Emerald Ambient Glow */}
+      <section className="bg-gradient-to-b from-slate-950 via-[#07241e] to-slate-950 text-white py-14 px-4 sm:px-6 relative overflow-hidden border-b border-emerald-500/15">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-emerald-500/10 blur-[130px] pointer-events-none rounded-full" />
+        
         <div className="max-w-4xl mx-auto text-center relative z-10 space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-            <Bell size={14} className="text-emerald-400" />
-            <span>Instant Notification Engine + Push Alerts Active</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-amber-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold shadow-lg">
+            <Sparkles size={14} className="text-amber-400 animate-pulse" />
+            <span>Pakistan&apos;s Trusted Halal Rishta & Matrimonial Platform</span>
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-            رابطے جو اعتماد سے بنیں
-            <span className="block text-2xl sm:text-3xl font-normal text-slate-300 mt-2">
-              Verified Friendship & Serious Rishta Matching
+            رابطے جو اعتماد اور وقار سے بنیں
+            <span className="block text-xl sm:text-2xl font-light text-slate-300 mt-2 font-sans">
+              Verified Connections • Mehram Guardianship • Zero Fake Profiles
             </span>
           </h1>
 
-          <p className="text-xs sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            Hamsafar is built on the philosophy: <em>«I am not alone if something goes wrong.»</em> 
-            Jab koi aapko connect request bhejta hai ya accept karta hai, toh instant screen notification aur in-app alert milta hai.
+          <p className="text-xs sm:text-base text-slate-300 max-w-2xl mx-auto leading-relaxed font-normal">
+            Hamsafar is designed for serious families and sincere individuals seeking life partners with dignity, mutual respect, and real identity verification.
           </p>
 
           {/* Quick Action Badges */}
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+          <div className="pt-3 flex flex-wrap items-center justify-center gap-2.5">
             <button
               onClick={() => setShowNotificationDropdown(true)}
-              className="bg-emerald-900/60 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/40 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+              className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/40 text-xs px-4 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md"
             >
               <Bell size={14} className="text-emerald-400" />
-              Notifications Center ({unreadNotificationsCount} Unread)
-            </button>
-            <button
-              onClick={requestBrowserPermission}
-              className="bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-600 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <span>🔔 Test Screen Push Alert</span>
+              Notifications ({unreadNotificationsCount} Unread)
             </button>
             <button
               onClick={() => setShowRequestsModal(true)}
-              className="bg-rose-900/60 hover:bg-rose-900 text-rose-200 border border-rose-500/40 text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors"
+              className="bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-500/40 text-xs px-4 py-2 rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md"
             >
               <UserCheck size={14} className="text-rose-400" />
-              Requests ({pendingRequestsCount})
+              Requests ({pendingRequestsCount} Pending)
             </button>
           </div>
         </div>

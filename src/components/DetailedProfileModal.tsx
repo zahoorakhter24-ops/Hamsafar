@@ -14,8 +14,46 @@ import {
   X,
   Plus,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
+
+const compressImage = (file: File, maxWidth = 500, quality = 0.75): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      if (typeof window === 'undefined') return resolve('');
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxWidth) {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
 
 interface DetailedProfileModalProps {
   isOpen: boolean;
@@ -68,6 +106,40 @@ export const DetailedProfileModal: React.FC<DetailedProfileModalProps> = ({
 
   const [dealBreakerInput, setDealBreakerInput] = useState('');
   const [qualityInput, setQualityInput] = useState('');
+
+  const handleMainPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const compressed = await compressImage(e.target.files[0], 500, 0.75);
+        setProfileData(prev => ({ ...prev, avatar: compressed }));
+      } catch (err) {
+        console.error('Error compressing image', err);
+      }
+    }
+  };
+
+  const handleAdditionalPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const currentPhotos = profileData.additionalPhotos || [];
+      if (currentPhotos.length >= 3) return;
+      try {
+        const compressed = await compressImage(e.target.files[0], 500, 0.75);
+        setProfileData(prev => ({
+          ...prev,
+          additionalPhotos: [...(prev.additionalPhotos || []), compressed],
+        }));
+      } catch (err) {
+        console.error('Error adding photo', err);
+      }
+    }
+  };
+
+  const handleRemoveAdditionalPhoto = (index: number) => {
+    setProfileData(prev => ({
+      ...prev,
+      additionalPhotos: (prev.additionalPhotos || []).filter((_, i) => i !== index),
+    }));
+  };
 
   if (!isOpen) return null;
 
@@ -185,6 +257,105 @@ export const DetailedProfileModal: React.FC<DetailedProfileModalProps> = ({
                   <option value="taking_a_break">🟡 Taking a break (Temporarily hidden)</option>
                   <option value="found_my_hamsafar">🔴 Found my Hamsafar (Closed)</option>
                 </select>
+              </div>
+
+              {/* Profile Photo & Gallery Card */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <Camera size={14} className="text-emerald-600" />
+                      Profile Photos & Gallery Management
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Apni main tasveer aur gallery photos yahan se tabdeel (change/modify) karein
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+                  {/* Main Avatar */}
+                  <div className="flex items-center gap-3">
+                    <div className="relative group shrink-0">
+                      <img
+                        src={profileData.avatar}
+                        alt="Profile picture"
+                        className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-600 shadow-md"
+                      />
+                      <label
+                        htmlFor="edit-main-photo"
+                        className="absolute -bottom-1 -right-1 bg-slate-900 hover:bg-emerald-600 text-white p-1.5 rounded-xl cursor-pointer transition-colors shadow-lg"
+                        title="Change photo"
+                      >
+                        <Camera size={13} />
+                      </label>
+                      <input
+                        id="edit-main-photo"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleMainPhotoUpload}
+                        className="hidden"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="edit-main-photo"
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Upload size={13} />
+                        Change Main Photo
+                      </label>
+                      <p className="text-[10px] text-slate-500">
+                        Camera ya gallery se naya photo select karein.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Additional Photos Divider */}
+                  <div className="sm:border-l sm:pl-5 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-200 flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-700">
+                        Additional Photos (Max 3):
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {(profileData.additionalPhotos || []).length}/3 photos
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {(profileData.additionalPhotos || []).map((photo, idx) => (
+                        <div key={idx} className="relative group w-14 h-14 rounded-xl overflow-hidden border border-slate-300">
+                          <img src={photo} alt={`Gallery ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAdditionalPhoto(idx)}
+                            className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 size={14} className="text-rose-400" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {(!profileData.additionalPhotos || profileData.additionalPhotos.length < 3) && (
+                        <label
+                          htmlFor="edit-additional-photo"
+                          className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-600 bg-slate-50 flex flex-col items-center justify-center text-slate-400 hover:text-emerald-600 cursor-pointer transition-colors"
+                        >
+                          <ImageIcon size={16} />
+                          <span className="text-[9px] font-bold mt-0.5">+ Add</span>
+                          <input
+                            id="edit-additional-photo"
+                            type="file"
+                            accept="image/*"
+                            onChange={handleAdditionalPhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* A. Bunyadi Maloomat */}
