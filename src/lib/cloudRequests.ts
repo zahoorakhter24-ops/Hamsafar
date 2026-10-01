@@ -180,3 +180,60 @@ export const updateCloudConnectionRequestStatus = async (
     return false;
   }
 };
+
+// Delete notification from Supabase
+export const deleteCloudNotification = async (notificationId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured() || !notificationId) return false;
+  try {
+    const { error } = await supabase.from('notifications').delete().eq('id', notificationId);
+    return !error;
+  } catch (err) {
+    return false;
+  }
+};
+
+// Mark single notification as read in Supabase
+export const markCloudNotificationAsRead = async (notificationId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured() || !notificationId) return false;
+  try {
+    const { error } = await supabase.from('notifications').update({ read: true }).eq('id', notificationId);
+    return !error;
+  } catch (err) {
+    return false;
+  }
+};
+
+// Mark all notifications for a user as read
+export const markAllCloudNotificationsAsRead = async (userId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured() || !userId) return false;
+  try {
+    const isUuid = !userId.startsWith('user-');
+    if (isUuid) {
+      await supabase.from('notifications').update({ read: true }).eq('user_id', userId);
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+};
+
+// Clean up / remove connection request notifications for this partner once accepted or declined
+export const deleteCloudNotificationsForSender = async (
+  receiverId: string,
+  senderName: string
+): Promise<boolean> => {
+  if (!isSupabaseConfigured() || !receiverId) return false;
+  try {
+    const isUuid = !receiverId.startsWith('user-');
+    if (isUuid) {
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', receiverId)
+        .eq('sender_name', senderName);
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+};

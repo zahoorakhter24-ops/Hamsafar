@@ -24,6 +24,7 @@ import {
   Sparkles,
   X
 } from 'lucide-react';
+import { ImageAdjustModal } from './ImageAdjustModal';
 
 // Client-side canvas image compression to keep payload small & fast (~30-50KB)
 const compressImage = (file: File, maxWidth = 500, quality = 0.75): Promise<string> => {
@@ -107,6 +108,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [smsAlert, setSmsAlert] = useState<{ show: boolean; code: string } | null>(null);
 
+  // Photo Adjust States
+  const [adjustImageSrc, setAdjustImageSrc] = useState<string | null>(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustTarget, setAdjustTarget] = useState<'avatar' | 'additional'>('avatar');
+
   // OTP Countdown timer
   React.useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -179,32 +185,44 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     }
   };
 
-  const handleMainPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMainPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      try {
-        const compressed = await compressImage(e.target.files[0], 500, 0.75);
-        setFormData((prev) => ({ ...prev, avatar: compressed, hasCustomPhoto: true }));
-      } catch (err) {
-        setError('Tasveer upload karne mein masla hua. Doosri tasveer muntakhab karein.');
-      }
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAdjustImageSrc(event.target?.result as string);
+        setAdjustTarget('avatar');
+        setShowAdjustModal(true);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleAdditionalPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAdditionalPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       if (formData.additionalPhotos.length >= 3) {
         setError('Aap zyada se zyada 3 additional photos add kar saktay hain.');
         return;
       }
-      try {
-        const compressed = await compressImage(e.target.files[0], 500, 0.75);
-        setFormData((prev) => ({
-          ...prev,
-          additionalPhotos: [...prev.additionalPhotos, compressed],
-        }));
-      } catch (err) {
-        setError('Tasveer upload karne mein masla hua.');
-      }
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAdjustImageSrc(event.target?.result as string);
+        setAdjustTarget('additional');
+        setShowAdjustModal(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAdjustConfirmed = (adjustedBase64: string) => {
+    if (adjustTarget === 'avatar') {
+      setFormData((prev) => ({ ...prev, avatar: adjustedBase64, hasCustomPhoto: true }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        additionalPhotos: [...prev.additionalPhotos, adjustedBase64],
+      }));
     }
   };
 
@@ -527,19 +545,35 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                       </label>
 
                       {formData.hasCustomPhoto && (
-                        <button
-                          type="button"
-                          onClick={() => setFormData(prev => ({
-                            ...prev,
-                            avatar: prev.gender === 'female'
-                              ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
-                              : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
-                            hasCustomPhoto: false
-                          }))}
-                          className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-semibold"
-                        >
-                          Reset
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdjustImageSrc(formData.avatar);
+                              setAdjustTarget('avatar');
+                              setShowAdjustModal(true);
+                            }}
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1 shadow-xs"
+                            title="Center & Adjust Karein"
+                          >
+                            <Sparkles size={12} className="text-amber-400" />
+                            <span>Center Karein</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({
+                              ...prev,
+                              avatar: prev.gender === 'female'
+                                ? 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80'
+                                : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&auto=format&fit=crop&q=80',
+                              hasCustomPhoto: false
+                            }))}
+                            className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-semibold"
+                          >
+                            Reset
+                          </button>
+                        </>
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500">
@@ -661,6 +695,14 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           </button>
         </div>
       </div>
+
+      <ImageAdjustModal
+        isOpen={showAdjustModal}
+        imageSrc={adjustImageSrc}
+        onClose={() => setShowAdjustModal(false)}
+        onConfirm={handleAdjustConfirmed}
+        title={adjustTarget === 'avatar' ? 'Main Profile Photo Center Karein' : 'Additional Photo Center Karein'}
+      />
     </div>
   );
 };

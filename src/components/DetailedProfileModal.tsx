@@ -19,6 +19,7 @@ import {
   Upload,
   Image as ImageIcon
 } from 'lucide-react';
+import { ImageAdjustModal } from './ImageAdjustModal';
 
 const compressImage = (file: File, maxWidth = 500, quality = 0.75): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -107,30 +108,47 @@ export const DetailedProfileModal: React.FC<DetailedProfileModalProps> = ({
   const [dealBreakerInput, setDealBreakerInput] = useState('');
   const [qualityInput, setQualityInput] = useState('');
 
-  const handleMainPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Photo Adjust States
+  const [adjustImageSrc, setAdjustImageSrc] = useState<string | null>(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustTarget, setAdjustTarget] = useState<'avatar' | 'additional'>('avatar');
+
+  const handleMainPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      try {
-        const compressed = await compressImage(e.target.files[0], 500, 0.75);
-        setProfileData(prev => ({ ...prev, avatar: compressed }));
-      } catch (err) {
-        console.error('Error compressing image', err);
-      }
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAdjustImageSrc(event.target?.result as string);
+        setAdjustTarget('avatar');
+        setShowAdjustModal(true);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleAdditionalPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAdditionalPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const currentPhotos = profileData.additionalPhotos || [];
       if (currentPhotos.length >= 3) return;
-      try {
-        const compressed = await compressImage(e.target.files[0], 500, 0.75);
-        setProfileData(prev => ({
-          ...prev,
-          additionalPhotos: [...(prev.additionalPhotos || []), compressed],
-        }));
-      } catch (err) {
-        console.error('Error adding photo', err);
-      }
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAdjustImageSrc(event.target?.result as string);
+        setAdjustTarget('additional');
+        setShowAdjustModal(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAdjustConfirmed = (adjustedBase64: string) => {
+    if (adjustTarget === 'avatar') {
+      setProfileData(prev => ({ ...prev, avatar: adjustedBase64 }));
+    } else {
+      setProfileData(prev => ({
+        ...prev,
+        additionalPhotos: [...(prev.additionalPhotos || []), adjustedBase64],
+      }));
     }
   };
 
@@ -299,15 +317,30 @@ export const DetailedProfileModal: React.FC<DetailedProfileModalProps> = ({
                     </div>
 
                     <div className="space-y-1.5">
-                      <label
-                        htmlFor="edit-main-photo"
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 shadow-xs"
-                      >
-                        <Upload size={13} />
-                        Change Main Photo
-                      </label>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label
+                          htmlFor="edit-main-photo"
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                        >
+                          <Upload size={13} />
+                          Change Main Photo
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdjustImageSrc(profileData.avatar);
+                            setAdjustTarget('avatar');
+                            setShowAdjustModal(true);
+                          }}
+                          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors"
+                          title="Center Karein"
+                        >
+                          <Sparkles size={13} className="text-amber-400" />
+                          Tasveer Center Karein
+                        </button>
+                      </div>
                       <p className="text-[10px] text-slate-500">
-                        Camera ya gallery se naya photo select karein.
+                        Camera ya gallery se naya photo select karein ya center barabar karein.
                       </p>
                     </div>
                   </div>
@@ -726,6 +759,14 @@ export const DetailedProfileModal: React.FC<DetailedProfileModalProps> = ({
         </div>
 
       </div>
+
+      <ImageAdjustModal
+        isOpen={showAdjustModal}
+        imageSrc={adjustImageSrc}
+        onClose={() => setShowAdjustModal(false)}
+        onConfirm={handleAdjustConfirmed}
+        title={adjustTarget === 'avatar' ? 'Main Profile Photo Center Karein' : 'Additional Photo Center Karein'}
+      />
     </div>
   );
 };

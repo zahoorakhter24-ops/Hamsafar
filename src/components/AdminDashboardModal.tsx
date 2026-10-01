@@ -39,7 +39,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onDeleteUser,
   onClearDemoData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'verifications' | 'users' | 'reports'>('verifications');
+  const [activeTab, setActiveTab] = useState<'verifications' | 'rejected' | 'users'>('verifications');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDocUser, setSelectedDocUser] = useState<UserProfile | null>(null);
   
@@ -114,10 +114,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     );
   }
 
-  // Filter profiles that have pending verification
+  // Filter profiles that have genuinely pending verification (Exclude already rejected)
   const pendingVerifications = profiles.filter(
-    (p) => p.verificationStatus === 'pending' || (!p.badges.identityVerified && p.submittedDocuments) || (!p.badges.identityVerified && !p.isDemo)
+    (p) =>
+      (p.verificationStatus === 'pending' || Boolean(p.submittedDocuments)) &&
+      p.verificationStatus !== 'rejected' &&
+      !p.badges.identityVerified
   );
+
+  // Filter profiles that have been rejected or suspended
+  const rejectedProfiles = profiles.filter(
+    (p) => p.verificationStatus === 'rejected' || p.badges.noActiveRestrictions === false
+  );
+
   const verifiedCount = profiles.filter((p) => p.badges.identityVerified).length;
 
   const filteredUsers = profiles.filter((p) =>
@@ -187,8 +196,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <p className="text-slate-500 text-[11px]">Pending Reviews</p>
           </div>
           <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-            <span className="text-lg font-black text-rose-600">0</span>
-            <p className="text-slate-500 text-[11px]">Active Scammers</p>
+            <span className="text-lg font-black text-rose-600">{rejectedProfiles.length}</span>
+            <p className="text-slate-500 text-[11px]">Rejected / Restricted</p>
           </div>
         </div>
 
@@ -204,6 +213,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           >
             <UserCheck size={16} />
             <span>Verification Queue ({pendingVerifications.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rejected')}
+            className={`py-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'rejected'
+                ? 'border-rose-600 text-rose-700'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <XCircle size={16} className="text-rose-600" />
+            <span>Rejected Profiles ({rejectedProfiles.length})</span>
           </button>
 
           <button
@@ -292,7 +313,64 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           )}
 
-          {/* 2. USER MANAGEMENT TAB */}
+          {/* 2. REJECTED PROFILES TAB */}
+          {activeTab === 'rejected' && (
+            <div className="space-y-3">
+              <div className="text-xs text-slate-500 mb-2">
+                Yeh accounts admin ki taraf se reject ya restrict kiye gaye hain:
+              </div>
+
+              {rejectedProfiles.length === 0 ? (
+                <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 text-xs">
+                  <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
+                  Filhaal koi profile reject ya restrict nahi hai.
+                </div>
+              ) : (
+                rejectedProfiles.map((user) => (
+                  <div
+                    key={user.id}
+                    className="p-4 bg-white rounded-2xl border border-rose-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={user.avatar}
+                        alt={user.name}
+                        className="w-12 h-12 rounded-xl object-cover border-2 border-rose-300"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900 text-sm">{user.name}</h4>
+                          <span className="text-xs bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-md border border-rose-200">
+                            Verification Rejected ❌
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">{user.city} • {user.profession}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => onApproveVerification(user.id)}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <CheckCircle2 size={13} />
+                        Re-Approve Profile
+                      </button>
+                      <button
+                        onClick={() => onDeleteUser(user.id)}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <Trash2 size={13} />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* 3. USER MANAGEMENT TAB */}
           {activeTab === 'users' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3 mb-2">
@@ -340,7 +418,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                           <span className="capitalize">{u.purpose.join(', ')}</span>
                         </td>
                         <td className="p-3">
-                          {u.badges.identityVerified ? (
+                          {u.verificationStatus === 'rejected' ? (
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                              Rejected ❌
+                            </span>
+                          ) : u.badges.identityVerified ? (
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                               Verified
                             </span>
@@ -352,6 +434,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => onRejectVerification(u.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100"
+                              title="Reject Verification"
+                            >
+                              <XCircle size={15} />
+                            </button>
                             <button
                               onClick={() => onBanUser(u.id)}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-100"

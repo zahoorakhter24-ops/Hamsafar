@@ -49,7 +49,11 @@ import {
   sendCloudConnectionRequest,
   fetchCloudNotifications,
   fetchCloudConnectionRequests,
-  updateCloudConnectionRequestStatus
+  updateCloudConnectionRequestStatus,
+  deleteCloudNotification,
+  markCloudNotificationAsRead,
+  markAllCloudNotificationsAsRead,
+  deleteCloudNotificationsForSender
 } from '@/lib/cloudRequests';
 
 export default function Home() {
@@ -506,14 +510,23 @@ export default function Home() {
   };
 
   const handleAcceptRequest = async (req: ConnectionRequestItem) => {
-    setConnectionRequests((prev) =>
-      prev.map((r) => (r.id === req.id ? { ...r, status: 'accepted' } : r))
+    // 1. Remove from pending connectionRequests list so it disappears immediately
+    setConnectionRequests((prev) => prev.filter((r) => r.id !== req.id));
+
+    // 2. Remove connection request notifications for this sender from local state
+    setNotifications((prev) =>
+      prev.filter((n) => !(n.senderName === req.sender.name && n.type === 'connection_request'))
     );
 
-    // Sync cloud status & notify sender across devices
+    // 3. Sync cloud status & notify sender across devices
     await updateCloudConnectionRequestStatus(req.id, 'accepted', currentUser || undefined);
 
-    // Notify user that connection is accepted & chat unlocked
+    // 4. Delete the request notification from Supabase so it NEVER reappears on page refresh!
+    if (currentUser) {
+      await deleteCloudNotificationsForSender(currentUser.id, req.sender.name);
+    }
+
+    // 5. Notify user locally that connection is accepted & chat unlocked
     const acceptNotif: AppNotification = {
       id: `notif-acc-${Date.now()}`,
       recipientId: 'me',
@@ -523,19 +536,30 @@ export default function Home() {
       title: 'Connection Accepted! 🤝',
       message: `Aap aur ${req.sender.name} ab aapas mein safe chat kar sakte hain.`,
       timestamp: 'Just now',
-      read: false,
+      read: true,
     };
-    saveNotifications([acceptNotif, ...notifications]);
+    saveNotifications([acceptNotif, ...notifications.filter((n) => !(n.senderName === req.sender.name && n.type === 'connection_request'))]);
     firePushNotification('Connection Accepted!', `${req.sender.name} ke sath aapki chat activate ho gayi hai.`);
     triggerToast(`${req.sender.name} ki request accept kar li gayi hai. Ab aap safe chat kar sakte hain.`);
     setChatPartner(req.sender);
   };
 
   const handleDeclineRequest = async (req: ConnectionRequestItem) => {
-    setConnectionRequests((prev) =>
-      prev.map((r) => (r.id === req.id ? { ...r, status: 'declined' } : r))
+    // 1. Remove from pending list
+    setConnectionRequests((prev) => prev.filter((r) => r.id !== req.id));
+
+    // 2. Remove notification locally
+    setNotifications((prev) =>
+      prev.filter((n) => !(n.senderName === req.sender.name && n.type === 'connection_request'))
     );
+
+    // 3. Update cloud status
     await updateCloudConnectionRequestStatus(req.id, 'declined');
+
+    // 4. Delete notification from Supabase
+    if (currentUser) {
+      await deleteCloudNotificationsForSender(currentUser.id, req.sender.name);
+    }
     triggerToast('Connection request ba-adab tareeqay se decline kar di gayi.');
   };
 
@@ -609,6 +633,13 @@ export default function Home() {
         return {
           ...p,
           verificationStatus: 'rejected' as const,
+          submittedDocuments: undefined,
+          badges: {
+            ...p.badges,
+            identityVerified: false,
+            photoVerified: false,
+            noActiveRestrictions: false, // restrict rejected profile
+          },
         };
       }
       return p;
@@ -617,12 +648,27 @@ export default function Home() {
 
     await updateCloudProfile(userId, {
       verificationStatus: 'rejected',
+      submittedDocuments: null as any,
+      badges: {
+        mobileVerified: true,
+        identityVerified: false,
+        photoVerified: false,
+        familyVerified: false,
+        noActiveRestrictions: false,
+      },
     });
 
     if (currentUser && currentUser.id === userId) {
       const updatedUser = {
         ...currentUser,
         verificationStatus: 'rejected' as const,
+        submittedDocuments: undefined,
+        badges: {
+          ...currentUser.badges,
+          identityVerified: false,
+          photoVerified: false,
+          noActiveRestrictions: false,
+        },
       };
       setCurrentUser(updatedUser);
       localStorage.setItem('hamsafar_current_user', JSON.stringify(updatedUser));
@@ -635,13 +681,13 @@ export default function Home() {
       senderName: 'Verification Officer',
       senderAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
       type: 'safety_alert',
-      title: 'Verification Resubmission Needed',
-      message: 'Aapke CNIC ya selfie ki tasweer wazeh nahi thi. Bara-e-meherbani wazeh tasweer dobara upload karein.',
+      title: 'Verification Rejected ❌',
+      message: 'Aapke CNIC ya selfie ki tasweer wazeh nahi thi. Profile verification reject ho gayi hai.',
       timestamp: 'Just now',
       read: false,
     };
     saveNotifications([rejectNotif, ...notifications]);
-    triggerToast(`${rejectedUserName} ki verification reject kar di gayi hai.`);
+    triggerToast(`${rejectedUserName} ki profile verification reject kar di gayi hai.`);
   };
 
   const handleAdminBanUser = async (userId: string) => {
@@ -685,20 +731,28 @@ export default function Home() {
   };
 
   // Mark notification read
-  const handleMarkAsRead = (id: string) => {
+  const handleMarkAsRead = async (id: string) => {
     const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
     saveNotifications(updated);
+    await markCloudNotificationAsRead(id);
   };
 
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
     const updated = notifications.map((n) => ({ ...n, read: true }));
     saveNotifications(updated);
+    if (currentUser) {
+      await markAllCloudNotificationsAsRead(currentUser.id);
+    }
   };
 
   // Filter profiles (Exclude current logged-in user so you never see yourself)
   const filteredProfiles = profiles.filter((p) => {
     // 1. Never show your own profile in matching/discovery
     if (currentUser && (p.id === currentUser.id || p.name === currentUser.name)) {
+      return false;
+    }
+    // 2. Never show rejected or restricted profiles in public discovery
+    if (p.badges.noActiveRestrictions === false || p.verificationStatus === 'rejected') {
       return false;
     }
     if (searchCity && !p.city.toLowerCase().includes(searchCity.toLowerCase())) {
