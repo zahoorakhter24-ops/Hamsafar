@@ -717,10 +717,22 @@ export default function Home() {
   };
 
   const handleAdminDeleteUser = async (userId: string) => {
+    // 1. Instantly remove from profiles state
     const updated = profiles.filter((p) => p.id !== userId);
+    setProfiles(updated);
     saveProfilesState(updated);
+
+    // 2. Track in local deleted storage immediately
+    try {
+      const stored = JSON.parse(localStorage.getItem('hamsafar_deleted_ids') || '[]');
+      if (!stored.includes(userId)) {
+        localStorage.setItem('hamsafar_deleted_ids', JSON.stringify([...stored, userId]));
+      }
+    } catch (e) {}
+
+    // 3. Delete foreign relations and register global deletion flag in Supabase
     await deleteCloudProfile(userId);
-    triggerToast('User permanently removed from platform.');
+    triggerToast('User account kamyabi se permanently delete kar diya gaya hai.');
   };
 
   const handleClearDemoData = async () => {

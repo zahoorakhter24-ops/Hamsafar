@@ -151,10 +151,24 @@ export const isDemoGloballyCleared = async (): Promise<boolean> => {
   }
 };
 
+// Get locally stored deleted IDs
+const getLocalDeletedIds = (): Set<string> => {
+  const set = new Set<string>();
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = JSON.parse(localStorage.getItem('hamsafar_deleted_ids') || '[]');
+      stored.forEach((id: string) => set.add(id));
+    } catch (e) {}
+  }
+  return set;
+};
+
 // Fetch all profiles from Supabase cloud (with fallback)
 export const fetchCloudProfiles = async (): Promise<UserProfile[]> => {
+  const localDeleted = getLocalDeletedIds();
+
   if (!isSupabaseConfigured()) {
-    return INITIAL_PROFILES;
+    return INITIAL_PROFILES.filter((p) => !localDeleted.has(p.id));
   }
 
   try {
@@ -164,29 +178,49 @@ export const fetchCloudProfiles = async (): Promise<UserProfile[]> => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .neq('name', 'SYSTEM_FLAG_DEMO_CLEARED')
       .order('created_at', { ascending: false });
 
-    if (error) {
+    if (error || !data) {
       console.warn('Supabase fetch error, fallback:', error);
-      return demoCleared ? [] : INITIAL_PROFILES;
+      const fallback = demoCleared ? [] : INITIAL_PROFILES;
+      return fallback.filter((p) => !localDeleted.has(p.id));
     }
 
-    if (!data || data.length === 0) {
-      if (demoCleared) {
-        return [];
+    // 2. Extract all globally deleted IDs marked with SYSTEM_DELETED_
+    const globallyDeletedIds = new Set<string>();
+    data.forEach((r) => {
+      if (r.name && r.name.startsWith('SYSTEM_DELETED_')) {
+        globallyDeletedIds.add(r.name.replace('SYSTEM_DELETED_', ''));
       }
-      return INITIAL_PROFILES;
+    });
+
+    // Also merge locally deleted IDs
+    localDeleted.forEach((id) => globallyDeletedIds.add(id));
+
+    // 3. Filter out system flags and any deleted user IDs
+    const activeRows = data.filter(
+      (r) =>
+        !r.name.startsWith('SYSTEM_') &&
+        !r.name.startsWith('SYSTEM_FLAG_') &&
+        !globallyDeletedIds.has(r.id)
+    );
+
+    const loaded = activeRows.map(mapDbRowToProfile);
+
+    let finalProfiles = loaded;
+    if (demoCleared) {
+      finalProfiles = loaded.filter((p) => !p.isDemo && !globallyDeletedIds.has(p.id));
+    } else {
+      const initialRemaining = INITIAL_PROFILES.filter((p) => !globallyDeletedIds.has(p.id));
+      const existingIds = new Set(loaded.map((p) => p.id));
+      const notInDb = initialRemaining.filter((p) => !existingIds.has(p.id));
+      finalProfiles = [...loaded, ...notInDb];
     }
 
-    const loaded = data.map(mapDbRowToProfile);
-    if (demoCleared) {
-      return loaded.filter((p) => !p.isDemo);
-    }
-    return loaded;
+    return finalProfiles.filter((p) => !globallyDeletedIds.has(p.id));
   } catch (err) {
     console.error('Failed to fetch from cloud:', err);
-    return INITIAL_PROFILES;
+    return INITIAL_PROFILES.filter((p) => !localDeleted.has(p.id));
   }
 };
 
@@ -250,13 +284,52 @@ export const updateCloudProfile = async (id: string, updates: Partial<UserProfil
   }
 };
 
-// Delete profile in cloud
-export const deleteCloudProfile = async (id: string) => {
-  if (!isSupabaseConfigured()) return;
+// Delete profile in cloud permanently
+export const deleteCloudProfile = async (id: string): Promise<boolean> => {
+  if (!isSupabaseConfigured() || !id) return false;
+
   try {
-    await supabase.from('profiles').delete().eq('id', id);
+    const isUuid = !id.startsWith('user-');
+
+    // 1. Delete associated foreign key relations (connection requests, messages, notifications)
+    if (isUuid) {
+      await supabase.from('connection_requests').delete().or(`sender_id.eq.${id},receiver_id.eq.${id}`);
+      await supabase.from('messages').delete().or(`sender_id.eq.${id},receiver_id.eq.${id}`);
+      await supabase.from('notifications').delete().eq('user_id', id);
+    }
+
+    // 2. Insert permanent SYSTEM_DELETED marker into profiles table so all devices filter it out permanently
+    await supabase.from('profiles').insert([
+      {
+        name: `SYSTEM_DELETED_${id}`,
+        age: 99,
+        gender: 'male',
+        city: 'System',
+        profession: 'System',
+        education: 'System',
+        purpose: ['rishta'],
+      },
+    ]);
+
+    // 3. Also attempt direct table row deletion
+    if (isUuid) {
+      await supabase.from('profiles').delete().eq('id', id);
+    }
+
+    // 4. Save to local storage deleted set
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = JSON.parse(localStorage.getItem('hamsafar_deleted_ids') || '[]');
+        if (!stored.includes(id)) {
+          localStorage.setItem('hamsafar_deleted_ids', JSON.stringify([...stored, id]));
+        }
+      } catch (e) {}
+    }
+
+    return true;
   } catch (err) {
     console.error('Delete cloud error:', err);
+    return false;
   }
 };
 

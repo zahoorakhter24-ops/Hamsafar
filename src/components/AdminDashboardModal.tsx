@@ -357,7 +357,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                         Re-Approve Profile
                       </button>
                       <button
-                        onClick={() => onDeleteUser(user.id)}
+                        onClick={() => {
+                          if (confirm(`Kya aap waqai ${user.name} ko mukammal delete karna chahte hain?`)) {
+                            onDeleteUser(user.id);
+                          }
+                        }}
                         className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
                       >
                         <Trash2 size={13} />
@@ -449,8 +453,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                               <Ban size={15} />
                             </button>
                             <button
-                              onClick={() => onDeleteUser(u.id)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100"
+                              onClick={() => {
+                                if (confirm(`Kya aap waqai ${u.name} ko mukammal delete karna chahte hain?`)) {
+                                  onDeleteUser(u.id);
+                                }
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors"
                               title="Delete Permanently"
                             >
                               <Trash2 size={15} />
